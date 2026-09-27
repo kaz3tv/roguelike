@@ -39,12 +39,28 @@ ENEMIES = {
     "mage": ("Characters/Humanoid", 1, 10),
     "orc": ("Characters/Player", 0, 12),
     "boss": ("Characters/Demon", 3, 1),
+    "mushroom": ("Characters/Plant", 0, 0),
+    "snake": ("Characters/Reptile", 0, 4),
+    "big_slime": ("Characters/Slime", 0, 1),
+    "archer": ("Characters/Humanoid", 6, 5),
+    "fire_spirit": ("Characters/Elemental", 2, 3),
+    "golem": ("Characters/Elemental", 1, 1),
 }
 ITEMS = {
     "potion": ("Items/Potion.png", 0, 0),
+    "potion_big": ("Items/Potion.png", 2, 0),
+    "potion_power": ("Items/Potion.png", 3, 0),
     "scroll": ("Items/Scroll.png", 0, 0),
+    # 巻物は種類ごとに色を変えて見分けられるようにする
+    "scroll_fire": ("Items/Scroll.png", 6, 0),
+    "scroll_warp": ("Items/Scroll.png", 1, 0),
+    "scroll_map": ("Items/Scroll.png", 2, 0),
+    "scroll_sleep": ("Items/Scroll.png", 3, 0),
+    "scroll_thunder": ("Items/Scroll.png", 4, 0),
     "sword": ("Items/MedWep.png", 0, 0),
+    "greatsword": ("Items/LongWep.png", 0, 1),
     "shield": ("Items/Shield.png", 0, 0),
+    "amulet": ("Items/Amulet.png", 6, 0),
 }
 
 

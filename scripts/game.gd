@@ -13,8 +13,14 @@ const ITEM_MIN := 3
 const ITEM_MAX := 5
 ## ボスがいる最後の階
 const BOSS_FLOOR := 10
-## 闇の炎の威力（ボスの攻撃力に対する割合）
+## 闇の炎・魔法の弾の威力（攻撃力に対する割合）
 const BOLT_POWER := 0.6
+## 遠くから撃つ魔法の名前
+const BOLT_NAMES := {"boss": "闇の炎", "caster": "魔法の弾"}
+## 火の精霊が倒れたときの爆発のダメージ（まわり 8 マス）
+const EXPLOSION_DAMAGE := 8
+## 眠っている敵の色
+const SLEEP_TINT := Color(0.55, 0.6, 1.0)
 ## リザルトを出してから Enter を受け付けるまでの時間（ミリ秒）
 const RESULT_INPUT_DELAY_MS := 800
 
@@ -391,19 +397,49 @@ func player_step(dir: Vector2i) -> void:
 
 func player_attack(enemy: Actor, dir: Vector2i) -> void:
 	bump(player_sprite, dir)
+	enemy.sleep_turns = 0
 	var result := Combat.attack(player, enemy, rng)
 	if not result["hit"]:
 		add_message("%sへの攻撃は外れた。" % enemy.display_name)
 		audio.play("attack_miss")
 		popup("MISS", enemy.pos, Color.WHITE)
 		return
-	popup(str(result["damage"]), enemy.pos, DAMAGE_COLOR)
-	flash(enemy.node, DAMAGE_COLOR)
 	audio.play("hit_enemy")
+	if not enemy.is_dead():
+		add_message("%sに %d のダメージ。" % [enemy.display_name, result["damage"]])
+	after_enemy_hit(enemy, result["damage"])
+
+
+## 敵に damage を与える（巻物や爆発など、攻撃の命中判定がないもの）
+func hurt_enemy(enemy: Actor, damage: int) -> void:
+	enemy.hp = maxi(enemy.hp - damage, 0)
+	after_enemy_hit(enemy, damage)
+
+
+## 敵の HP が減ったあとの共通の処理：数字と点滅、目を覚ます、倒れる、分裂する
+func after_enemy_hit(enemy: Actor, damage: int) -> void:
+	popup(str(damage), enemy.pos, DAMAGE_COLOR)
+	flash(enemy.node, DAMAGE_COLOR)
+	enemy.sleep_turns = 0
 	if enemy.is_dead():
 		kill_enemy(enemy)
-	else:
-		add_message("%sに %d のダメージ。" % [enemy.display_name, result["damage"]])
+	elif enemy.behavior == "split":
+		split_enemy(enemy)
+
+
+## 大スライムの分裂：となりの空いたマスに、同じ HP の分身を出す。分身は分裂しない
+func split_enemy(enemy: Actor) -> void:
+	var first := rng.randi_range(0, MonsterAI.DIRS.size() - 1)
+	for i in MonsterAI.DIRS.size():
+		var dir := MonsterAI.DIRS[(first + i) % MonsterAI.DIRS.size()]
+		var target := enemy.pos + dir
+		if map.can_step(enemy.pos, dir) and enemy_at(target) == null and target != player.pos:
+			var clone := spawn_enemy(enemy.kind, target)
+			clone.hp = enemy.hp
+			clone.xp = 1
+			clone.behavior = "chase"
+			add_message("%sが分裂した！" % enemy.display_name)
+			return
 
 
 func kill_enemy(enemy: Actor) -> void:
@@ -420,6 +456,25 @@ func kill_enemy(enemy: Actor) -> void:
 		add_message("レベル%dに上がった！" % player.level)
 		audio.play("level_up")
 		popup("LEVEL UP", player.pos, Color("#a7f070"))
+	if enemy.behavior == "explode":
+		explode(enemy)
+
+
+## 火の精霊の爆発：まわり 8 マスのプレイヤーと敵にダメージ
+func explode(source: Actor) -> void:
+	add_message("%sが爆発した！" % source.display_name)
+	audio.play("scroll_fire")
+	popup("BOOM", source.pos, HURT_COLOR)
+	for e in enemies.duplicate():
+		if e in enemies and chebyshev(e.pos - source.pos) <= 1:
+			hurt_enemy(e, EXPLOSION_DAMAGE)
+	if not game_over and chebyshev(player.pos - source.pos) <= 1:
+		add_message("爆発に巻き込まれた。%d のダメージを受けた。" % EXPLOSION_DAMAGE)
+		damage_player(EXPLOSION_DAMAGE, "%sの爆発" % source.display_name)
+
+
+static func chebyshev(d: Vector2i) -> int:
+	return maxi(absi(d.x), absi(d.y))
 
 
 ## 足元のアイテムを拾う
@@ -468,17 +523,27 @@ func use_item(item: Item) -> void:
 				add_message("%sを外した。" % item.display_name())
 				audio.play("equip")
 		"potion":
-			var healed := mini(item.data()["power"], player.max_hp - player.hp)
-			player.hp += healed
 			inv.remove(item)
-			add_message("%sを飲んだ。HPが %d 回復した。" % [item.display_name(), healed])
-			popup("+%d" % healed, player.pos, Color("#a7f070"))
-			audio.play("heal")
+			audio.play(item.data()["sound"])
+			match item.data()["effect"]:
+				"heal":
+					var healed := mini(item.data()["power"], player.max_hp - player.hp)
+					player.hp += healed
+					add_message("%sを飲んだ。HPが %d 回復した。" % [item.display_name(), healed])
+					popup("+%d" % healed, player.pos, Color("#a7f070"))
+				"strength":
+					player.attack += item.data()["power"]
+					add_message("%sを飲んだ。力がみなぎり、攻撃力が %d 上がった。" % [item.display_name(), item.data()["power"]])
+					popup("ATK UP", player.pos, Color("#a7f070"))
 		"scroll":
 			inv.remove(item)
 			add_message("%sを読んだ。" % item.display_name())
-			audio.play("scroll_" + item.data()["effect"])
+			audio.play(item.data()["sound"])
 			read_scroll(item)
+		"amulet":
+			# 持っているだけで効くので、使ってもターンは進まない
+			add_message("%sは持っているだけで効き目がある。" % item.display_name())
+			return
 	end_player_turn()
 
 
@@ -489,11 +554,29 @@ func read_scroll(item: Item) -> void:
 			if targets.is_empty():
 				add_message("しかし、まわりに敵はいなかった。")
 			for e: Actor in targets:
-				var damage: int = item.data()["power"]
-				e.hp = maxi(e.hp - damage, 0)
-				popup(str(damage), e.pos, DAMAGE_COLOR)
-				if e.is_dead():
-					kill_enemy(e)
+				if e in enemies:
+					hurt_enemy(e, item.data()["power"])
+		"sleep":
+			var targets := enemies.filter(func(e: Actor) -> bool: return visible_cells.has(e.pos))
+			if targets.is_empty():
+				add_message("しかし、まわりに敵はいなかった。")
+			for e: Actor in targets:
+				if e.kind == "boss":
+					add_message("%sには効かなかった。" % e.display_name)
+					continue
+				e.sleep_turns = item.data()["power"]
+				popup("Zz", e.pos, SLEEP_TINT)
+				add_message("%sは眠ってしまった。" % e.display_name)
+		"thunder":
+			var nearest: Actor = null
+			for e in enemies:
+				if visible_cells.has(e.pos) and (nearest == null or chebyshev(e.pos - player.pos) < chebyshev(nearest.pos - player.pos)):
+					nearest = e
+			if nearest == null:
+				add_message("しかし、まわりに敵はいなかった。")
+			else:
+				add_message("%sに雷が落ちた！" % nearest.display_name)
+				hurt_enemy(nearest, item.data()["power"])
 		"warp":
 			var room := map.rooms[rng.randi_range(0, map.rooms.size() - 1)]
 			for i in 50:
@@ -517,6 +600,10 @@ func read_scroll(item: Item) -> void:
 
 
 func end_player_turn() -> void:
+	# 自分の行動（爆発など）で倒れていたら、敵はもう動かない
+	if game_over:
+		update_view()
+		return
 	turn += 1
 	if turn % REGEN_TURNS == 0:
 		player.hp = mini(player.hp + 1, player.max_hp)
@@ -531,22 +618,34 @@ func enemies_act() -> void:
 	for e in enemies:
 		occupied[e.pos] = true
 	for e in enemies:
-		var action := MonsterAI.decide(map, e, player.pos, visible_cells.has(e.pos), occupied, rng)
-		match action["type"]:
-			"attack":
-				enemy_attack(e)
-				if game_over:
-					return
-			"bolt":
-				enemy_bolt(e)
-				if game_over:
-					return
-			"move":
-				occupied.erase(e.pos)
-				e.pos += action["dir"]
-				occupied[e.pos] = true
-				if action["dir"].x != 0:
-					e.node.flip_h = action["dir"].x < 0
+		if e.sleep_turns > 0:
+			e.sleep_turns -= 1
+			continue
+		if e.behavior == "slow":
+			# 2 ターンに 1 回だけ動く
+			e.rested = not e.rested
+			if e.rested:
+				continue
+		# 速い敵は 2 回まで動ける。攻撃したらそこで終わり（攻撃は 1 回だけ）
+		for step in (2 if e.behavior == "fast" else 1):
+			var action := MonsterAI.decide(map, e, player.pos, visible_cells.has(e.pos), occupied, rng)
+			match action["type"]:
+				"attack":
+					enemy_attack(e)
+				"bolt":
+					enemy_bolt(e)
+				"arrow":
+					enemy_arrow(e)
+				"move":
+					occupied.erase(e.pos)
+					e.pos += action["dir"]
+					occupied[e.pos] = true
+					if action["dir"].x != 0:
+						e.node.flip_h = action["dir"].x < 0
+			if game_over:
+				return
+			if action["type"] != "move":
+				break
 
 
 func enemy_attack(e: Actor) -> void:
@@ -558,23 +657,59 @@ func enemy_attack(e: Actor) -> void:
 		popup("MISS", player.pos, Color.WHITE)
 		return
 	add_message("%sの攻撃。%d のダメージを受けた。" % [e.display_name, result["damage"]])
-	popup(str(result["damage"]), player.pos, HURT_COLOR)
-	hurt_effect()
 	audio.play("hit_player")
-	if player.is_dead():
-		show_game_over(e)
+	after_player_hit(result["damage"], e.display_name)
 
 
-## ボスの遠距離攻撃。必ず当たるが、ふつうの攻撃より弱い。
-func enemy_bolt(e: Actor) -> void:
-	var damage := Combat.roll_damage(roundi(e.total_attack() * BOLT_POWER), player.total_defense(), rng)
+## 弓兵の矢。ふつうの攻撃と同じように当たり外れがある
+func enemy_arrow(e: Actor) -> void:
+	audio.play("attack_swing")
+	var result := Combat.attack(e, player, rng)
+	if not result["hit"]:
+		add_message("%sの矢は外れた。" % e.display_name)
+		popup("MISS", player.pos, Color.WHITE)
+		return
+	add_message("%sの矢が当たった。%d のダメージを受けた。" % [e.display_name, result["damage"]])
+	audio.play("hit_player")
+	after_player_hit(result["damage"], e.display_name)
+
+
+## プレイヤーに damage を与える（命中判定がないもの）
+func damage_player(damage: int, killer_name: String) -> void:
 	player.hp = maxi(player.hp - damage, 0)
-	audio.play("magic_bolt")
-	add_message("%sは闇の炎を放った。%d のダメージを受けた。" % [e.display_name, damage])
+	after_player_hit(damage, killer_name)
+
+
+## プレイヤーの HP が減ったあと。倒れていたら、復活の首飾りがあれば生き返り、なければゲームオーバー
+func after_player_hit(damage: int, killer_name: String) -> void:
 	popup(str(damage), player.pos, HURT_COLOR)
 	hurt_effect()
-	if player.is_dead():
-		show_game_over(e)
+	if not player.is_dead():
+		return
+	var amulet := find_item_of_type("amulet")
+	if amulet:
+		player.inventory.remove(amulet)
+		player.hp = maxi(player.max_hp / 2, 1)
+		add_message("%sが砕け散り、よみがえった！" % amulet.display_name())
+		audio.play("level_up")
+		popup("REVIVE", player.pos, Color("#a7f070"))
+		return
+	show_game_over(killer_name)
+
+
+func find_item_of_type(type: String) -> Item:
+	for item in player.inventory.items:
+		if item.type() == type:
+			return item
+	return null
+
+
+## 魔王と魔法使いの遠距離攻撃。必ず当たるが、ふつうの攻撃より弱い。
+func enemy_bolt(e: Actor) -> void:
+	var damage := Combat.roll_damage(roundi(e.total_attack() * BOLT_POWER), player.total_defense(), rng)
+	audio.play("magic_bolt")
+	add_message("%sは%sを放った。%d のダメージを受けた。" % [e.display_name, BOLT_NAMES[e.behavior], damage])
+	damage_player(damage, e.display_name)
 
 
 func show_clear() -> void:
@@ -583,11 +718,11 @@ func show_clear() -> void:
 	show_result("魔王を倒した！", "ダンジョン踏破", true)
 
 
-func show_game_over(killer: Actor) -> void:
-	add_message("%sにやられてしまった…" % killer.display_name)
+func show_game_over(killer_name: String) -> void:
+	add_message("%sにやられてしまった…" % killer_name)
 	audio.play("player_die")
 	audio.play_bgm("game_over")
-	show_result("やられてしまった…", "%sに倒された" % killer.display_name, false)
+	show_result("やられてしまった…", "%sに倒された" % killer_name, false)
 
 
 ## リザルト画面。記録を保存して、塗り替えた項目には「新記録」と付ける。
@@ -661,6 +796,7 @@ func update_view() -> void:
 	for e in enemies:
 		move_sprite(e.node, e.pos)
 		e.node.visible = visible_cells.has(e.pos)
+		e.node.self_modulate = SLEEP_TINT if e.sleep_turns > 0 else Color.WHITE
 	# アイテムは一度見た場所なら、今見えていなくても表示しておく
 	for item in floor_items:
 		item.node.visible = map_view.explored.has(item.pos)
