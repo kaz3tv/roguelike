@@ -7,6 +7,7 @@
   © The DotGothic16 Project Authors
 BGM  Komiku（CC0 1.0）
 効果音  Juhani Junkala / SubspaceAudio（CC0 1.0）
-ドット絵  このゲームのために作成
+ドット絵  DawnLike（CC-BY 4.0）
+  DragonDePlatino / DawnBringer
 
 Esc で戻る
