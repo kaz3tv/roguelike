@@ -18,6 +18,14 @@ const BOLT_POWER := 0.6
 ## リザルトを出してから Enter を受け付けるまでの時間（ミリ秒）
 const RESULT_INPUT_DELAY_MS := 800
 
+## 1 マス歩くのにかける時間（秒）
+const MOVE_TIME := 0.07
+## 階段で暗くなる・明るくなる時間（秒）
+const FADE_OUT_TIME := 0.2
+const FADE_IN_TIME := 0.3
+## 暗転中に階数を見せておく時間（秒）
+const FLOOR_BANNER_TIME := 0.4
+
 ## キー → 移動方向（8 方向）。斜めは Q/E/Z/C かテンキー。
 const MOVE_KEYS := {
 	KEY_UP: Vector2i(0, -1), KEY_DOWN: Vector2i(0, 1), KEY_LEFT: Vector2i(-1, 0), KEY_RIGHT: Vector2i(1, 0),
@@ -30,6 +38,8 @@ const MOVE_KEYS := {
 const WAIT_KEYS := [KEY_SPACE, KEY_KP_5, KEY_PERIOD]
 ## 持ち物画面を開くキー
 const MENU_KEYS := [KEY_I, KEY_TAB]
+## ミニマップを出す／隠すキー
+const MINIMAP_KEY := KEY_N
 const PLAYER_FRAMES := [
 	preload("res://assets/art/player_0.png"),
 	preload("res://assets/art/player_1.png"),
@@ -51,6 +61,10 @@ var floor_items: Array[Item] = []
 var visible_cells := {}
 var player_frame := 0
 var game_over := false
+## 暗転などの演出中は操作を受け付けない
+var busy := false
+## true のあいだは、絵をなめらかに動かさずにその場所へ置く（階に着いたときなど）
+var snap_sprites := true
 ## タイトル画面を出しているあいだ true
 var in_title := false
 ## タイトルで選んでいる項目（中断セーブがあるときだけ使う）。0: つづきから 1: はじめから
@@ -79,6 +93,9 @@ var item_textures := {}
 @onready var title_records: Label = $HUD/Title/Records
 @onready var title_start: Label = $HUD/Title/Start
 @onready var suspend_panel: Control = $HUD/Suspend
+@onready var minimap = $HUD/Minimap
+@onready var fade: Control = $HUD/Fade
+@onready var fade_label: Label = $HUD/Fade/Label
 
 
 func _ready() -> void:
@@ -190,7 +207,9 @@ func enter_floor() -> void:
 	else:
 		spawn_enemies()
 		spawn_items()
+	snap_sprites = true
 	update_view()
+	snap_sprites = false
 	camera.reset_smoothing()
 	add_message("地下%d階に着いた。" % floor_number)
 	if is_boss_floor:
@@ -282,6 +301,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var code := key.physical_keycode
 	var is_enter := code == KEY_ENTER or code == KEY_KP_ENTER
+	if busy:
+		get_viewport().set_input_as_handled()
+		return
 	if in_title:
 		if not key.echo:
 			title_input(code)
@@ -324,6 +346,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif code == KEY_ESCAPE and not key.echo:
 		audio.play("menu_select")
 		suspend_panel.show()
+	elif code == MINIMAP_KEY and not key.echo:
+		minimap.visible = not minimap.visible
 	elif code == KEY_M and not key.echo:
 		audio.toggle_mute()
 		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
@@ -360,6 +384,7 @@ func player_attack(enemy: Actor, dir: Vector2i) -> void:
 		popup("MISS", enemy.pos, Color.WHITE)
 		return
 	popup(str(result["damage"]), enemy.pos, DAMAGE_COLOR)
+	flash(enemy.node, DAMAGE_COLOR)
 	audio.play("hit_enemy")
 	if enemy.is_dead():
 		kill_enemy(enemy)
@@ -520,6 +545,7 @@ func enemy_attack(e: Actor) -> void:
 		return
 	add_message("%sの攻撃。%d のダメージを受けた。" % [e.display_name, result["damage"]])
 	popup(str(result["damage"]), player.pos, HURT_COLOR)
+	hurt_effect()
 	audio.play("hit_player")
 	if player.is_dead():
 		show_game_over(e)
@@ -532,6 +558,7 @@ func enemy_bolt(e: Actor) -> void:
 	audio.play("magic_bolt")
 	add_message("%sは闇の炎を放った。%d のダメージを受けた。" % [e.display_name, damage])
 	popup(str(damage), player.pos, HURT_COLOR)
+	hurt_effect()
 	if player.is_dead():
 		show_game_over(e)
 
@@ -581,9 +608,24 @@ func descend() -> void:
 		add_message("ここに階段はない。")
 		audio.play("error")
 		return
-	floor_number += 1
 	audio.play("stairs_down")
+	# 暗転 → 次の階を作る → 階数を見せてから明るくする
+	busy = true
+	fade_label.text = ""
+	fade.modulate.a = 0.0
+	fade.show()
+	var tween := create_tween()
+	tween.tween_property(fade, "modulate:a", 1.0, FADE_OUT_TIME)
+	await tween.finished
+	floor_number += 1
 	enter_floor()
+	fade_label.text = "地下%d階" % floor_number
+	await get_tree().create_timer(FLOOR_BANNER_TIME).timeout
+	tween = create_tween()
+	tween.tween_property(fade, "modulate:a", 0.0, FADE_IN_TIME)
+	await tween.finished
+	fade.hide()
+	busy = false
 
 
 func enemy_at(pos: Vector2i) -> Actor:
@@ -600,10 +642,10 @@ func update_view() -> void:
 			map_view.explored[cell] = true
 	map_view.visible_cells = visible_cells
 	map_view.queue_redraw()
-	player_sprite.position = Vector2(player.pos * TILE_SIZE)
+	move_sprite(player_sprite, player.pos)
 	player_sprite.texture = PLAYER_FRAMES[player_frame]
 	for e in enemies:
-		e.node.position = Vector2(e.pos * TILE_SIZE)
+		move_sprite(e.node, e.pos)
 		e.node.visible = visible_cells.has(e.pos)
 	# アイテムは一度見た場所なら、今見えていなくても表示しておく
 	for item in floor_items:
@@ -612,6 +654,51 @@ func update_view() -> void:
 	for e in enemies:
 		if e.kind == "boss":
 			status_label.text += "   %s %d/%d" % [e.display_name, e.hp, e.max_hp]
+	update_minimap()
+
+
+func update_minimap() -> void:
+	minimap.map = map
+	minimap.explored = map_view.explored
+	minimap.visible_cells = visible_cells
+	minimap.player_pos = player.pos
+	minimap.enemy_cells.assign(enemies.map(func(e: Actor) -> Vector2i: return e.pos))
+	minimap.item_cells.assign(floor_items.map(func(item: Item) -> Vector2i: return item.pos))
+	minimap.queue_redraw()
+
+
+## 絵を cell の場所へ動かす。隣のマスならなめらかに、遠ければ（ワープなど）すぐ置く。
+func move_sprite(sprite: Sprite2D, cell: Vector2i) -> void:
+	var target := Vector2(cell * TILE_SIZE)
+	if sprite.has_meta("move_tween"):
+		var old_tween: Tween = sprite.get_meta("move_tween")
+		if old_tween.is_valid():
+			old_tween.kill()
+	if snap_sprites or sprite.position.distance_to(target) > TILE_SIZE * 1.5:
+		sprite.position = target
+		return
+	if sprite.position == target:
+		return
+	var tween := sprite.create_tween()
+	tween.tween_property(sprite, "position", target, MOVE_TIME)
+	sprite.set_meta("move_tween", tween)
+
+
+## 攻撃を受けたとき：絵を赤く光らせて、画面を少し揺らす
+func hurt_effect() -> void:
+	flash(player_sprite, HURT_COLOR)
+	var tween := create_tween()
+	for i in 4:
+		var shake := Vector2(rng.randf_range(-2, 2), rng.randf_range(-2, 2)).round()
+		tween.tween_property(camera, "offset", shake, 0.03)
+	tween.tween_property(camera, "offset", Vector2.ZERO, 0.03)
+
+
+## 絵を一瞬 color に染めて、もとの色に戻す
+func flash(sprite: Sprite2D, color: Color) -> void:
+	sprite.modulate = color
+	var tween := sprite.create_tween()
+	tween.tween_property(sprite, "modulate", Color.WHITE, 0.25)
 
 
 func add_message(text: String) -> void:
@@ -723,6 +810,8 @@ func continue_run() -> void:
 		place_item(item, item.pos)
 	log_lines.assign(data["log"])
 	add_message("冒険の続きを始めた。")
+	snap_sprites = true
 	update_view()
+	snap_sprites = false
 	camera.reset_smoothing()
 	audio.play_bgm("boss" if floor_number == BOSS_FLOOR else audio.bgm_for_floor(floor_number))
