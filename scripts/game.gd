@@ -42,6 +42,11 @@ const MOVE_KEYS := {
 }
 ## その場で 1 ターン待つキー
 const WAIT_KEYS := [KEY_SPACE, KEY_KP_5, KEY_PERIOD]
+## ゲームパッドの方向 → 同じ働きのキー（斜めはテンキー）
+const PAD_DIR_KEYS := {
+	Vector2i(0, -1): KEY_UP, Vector2i(0, 1): KEY_DOWN, Vector2i(-1, 0): KEY_LEFT, Vector2i(1, 0): KEY_RIGHT,
+	Vector2i(-1, -1): KEY_KP_7, Vector2i(1, -1): KEY_KP_9, Vector2i(-1, 1): KEY_KP_1, Vector2i(1, 1): KEY_KP_3,
+}
 ## 持ち物画面を開くキー
 const MENU_KEYS := [KEY_I, KEY_TAB]
 ## 素材のクレジット（タイトル画面の C キーで表示）。素材を差し替えたらここも直す
@@ -59,6 +64,7 @@ const HURT_COLOR := Color("#ef7d57")
 @export var fixed_seed := 0
 
 var rng := RandomNumberGenerator.new()
+var pad := PadInput.new()
 var floor_number := 1
 var turn := 0
 var kills := 0
@@ -158,7 +164,7 @@ func records_text() -> String:
 
 func refresh_title_menu() -> void:
 	if not SaveGame.exists():
-		title_start.text = "Enter ではじめる"
+		title_start.text = "Enter / A ではじめる"
 		return
 	var names := ["つづきから", "はじめから"]
 	var lines := []
@@ -316,64 +322,106 @@ func item_at(pos: Vector2i) -> Item:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	var key := event as InputEventKey
-	if key == null or not key.pressed:
-		return
-	var code := key.physical_keycode
+	var handled := false
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		if key.pressed:
+			handled = handle_key(key.physical_keycode, key.echo)
+	elif event is InputEventJoypadButton:
+		var button := event as InputEventJoypadButton
+		if PadInput.is_dpad(button.button_index):
+			# 十字キーは押している間ずっと歩けるよう、_process でまとめて扱う
+			pad.set_button(button.button_index, button.pressed)
+			handled = true
+		elif button.pressed:
+			var code := pad_button_key(button.button_index)
+			if code != KEY_NONE:
+				handled = handle_key(code, false)
+	elif event is InputEventJoypadMotion:
+		var motion := event as InputEventJoypadMotion
+		pad.set_axis(motion.axis, motion.axis_value)
+	if handled:
+		get_viewport().set_input_as_handled()
+
+
+## ゲームパッドの十字キー・左スティックを、押しっぱなしも含めて方向キーとして扱う
+func _process(delta: float) -> void:
+	var step: Array = pad.update(delta)
+	if step[0] != Vector2i.ZERO:
+		handle_key(PAD_DIR_KEYS[step[0]], step[1])
+
+
+## ゲームパッドのボタンを、同じ働きのキーに置きかえる。場面によって働きが変わるボタンもある
+func pad_button_key(button: JoyButton) -> Key:
+	match button:
+		JOY_BUTTON_A:
+			return KEY_ENTER
+		JOY_BUTTON_B:
+			return KEY_BACKSPACE
+		JOY_BUTTON_X:
+			# 持ち物画面では「置く」、それ以外は「その場で待つ」
+			return KEY_X if inventory_menu.visible else KEY_SPACE
+		JOY_BUTTON_Y:
+			# タイトルでは「クレジット」、それ以外は「持ち物」
+			return KEY_C if in_title else KEY_I
+		JOY_BUTTON_START:
+			return KEY_ESCAPE
+		JOY_BUTTON_BACK:
+			return MINIMAP_KEY
+	return KEY_NONE
+
+
+## キー 1 回分の処理。echo は押しっぱなしによるくり返し。処理したら true を返す
+func handle_key(code: Key, echo: bool) -> bool:
 	var is_enter := code == KEY_ENTER or code == KEY_KP_ENTER
 	if busy:
-		get_viewport().set_input_as_handled()
-		return
+		return true
 	if in_title:
-		if not key.echo:
+		if not echo:
 			title_input(code)
-		get_viewport().set_input_as_handled()
-		return
+		return true
 	if game_over:
-		if is_enter and not key.echo and Time.get_ticks_msec() - result_shown_at > RESULT_INPUT_DELAY_MS:
+		if is_enter and not echo and Time.get_ticks_msec() - result_shown_at > RESULT_INPUT_DELAY_MS:
 			audio.play("menu_select")
 			show_title()
-		get_viewport().set_input_as_handled()
-		return
+		return true
 	if suspend_panel.visible:
-		if is_enter and not key.echo:
+		if is_enter and not echo:
 			suspend_run()
-		elif code in [KEY_ESCAPE, KEY_BACKSPACE] and not key.echo:
+		elif code in [KEY_ESCAPE, KEY_BACKSPACE] and not echo:
 			audio.play("menu_cancel")
 			suspend_panel.hide()
-		get_viewport().set_input_as_handled()
-		return
+		return true
 	if inventory_menu.visible:
 		# 決定キーの押しっぱなしで連続して使ってしまわないようにする
-		if not key.echo or code not in [KEY_ENTER, KEY_KP_ENTER, KEY_X]:
+		if not echo or code not in [KEY_ENTER, KEY_KP_ENTER, KEY_X]:
 			inventory_menu.handle_key(code)
-		get_viewport().set_input_as_handled()
-		return
+		return true
 	if MOVE_KEYS.has(code):
 		# 押しっぱなしで歩き続けられるよう、キーリピートも受け付ける
 		player_step(MOVE_KEYS[code])
 	elif code in WAIT_KEYS:
 		end_player_turn()
-	elif is_enter and not key.echo:
+	elif is_enter and not echo:
 		descend()
-	elif code in MENU_KEYS and not key.echo:
+	elif code in MENU_KEYS and not echo:
 		audio.play("menu_select")
 		inventory_menu.open(player.inventory)
-	elif code == KEY_F9 and not key.echo and OS.is_debug_build() and floor_number < BOSS_FLOOR:
+	elif code == KEY_F9 and not echo and OS.is_debug_build() and floor_number < BOSS_FLOOR:
 		# 確認用：エディタから起動したときだけ、F9 ですぐ次の階へ行ける
 		floor_number += 1
 		enter_floor()
-	elif code == KEY_ESCAPE and not key.echo:
+	elif code == KEY_ESCAPE and not echo:
 		audio.play("menu_select")
 		suspend_panel.show()
-	elif code == MINIMAP_KEY and not key.echo:
+	elif code == MINIMAP_KEY and not echo:
 		minimap.visible = not minimap.visible
-	elif code == KEY_M and not key.echo:
+	elif code == KEY_M and not echo:
 		audio.toggle_mute()
 		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
 	else:
-		return
-	get_viewport().set_input_as_handled()
+		return false
+	return true
 
 
 ## 方向キーの処理。敵がいれば攻撃、いなければ移動。
@@ -390,7 +438,7 @@ func player_step(dir: Vector2i) -> void:
 		player.pos = target
 		player_frame ^= 1
 		if map.tile_at(target) == Dungeon.Tile.STAIRS:
-			add_message("階段がある。Enter で降りる。")
+			add_message("階段がある。Enter（A ボタン）で降りる。")
 		pick_up()
 	end_player_turn()
 

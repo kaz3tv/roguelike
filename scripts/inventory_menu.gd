@@ -57,7 +57,7 @@ func refresh() -> void:
 	var lines: Array[String] = ["持ち物  %d/%d" % [inventory.items.size(), Inventory.CAPACITY]]
 	if inventory.items.is_empty():
 		lines.append("  （なにも持っていない）")
-		desc_label.text = "Esc: 閉じる"
+		desc_label.text = "Esc/B: 閉じる"
 	for i in inventory.items.size():
 		var item := inventory.items[i]
 		var mark := "＞" if i == cursor else "　"
@@ -66,5 +66,5 @@ func refresh() -> void:
 	if not inventory.items.is_empty():
 		var item := inventory.items[cursor]
 		var verb := "外す" if inventory.is_equipped(item) else ("装備" if item.is_equipment() else "使う")
-		desc_label.text = "%s\nEnter:%s  X:置く  Esc:閉じる" % [item.data()["desc"], verb]
+		desc_label.text = "%s\nEnter/A:%s  X:置く  Esc/B:閉じる" % [item.data()["desc"], verb]
 	list_label.text = "\n".join(lines)
