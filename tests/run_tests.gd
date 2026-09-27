@@ -21,6 +21,8 @@ func _init() -> void:
 	test_records()
 	test_save_game()
 	test_font_has_all_characters()
+	test_new_enemies()
+	test_item_floors()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -220,6 +222,9 @@ func test_audio_files() -> void:
 		check(m.get_string(1) in audio.SFX_NAMES, "一覧にない効果音を鳴らしている: " + m.get_string(1))
 	for effect in ["fire", "warp", "map"]:
 		check("scroll_" + effect in audio.SFX_NAMES, "巻物の効果音がない: " + effect)
+	for id in ItemData.ITEMS:
+		var item_sound: String = ItemData.ITEMS[id].get("sound", "")
+		check(item_sound == "" or item_sound in audio.SFX_NAMES, "アイテムの効果音が一覧にない: " + id)
 
 
 func test_boss() -> void:
@@ -331,3 +336,72 @@ func test_font_has_all_characters() -> void:
 	for ch in credits:
 		if ch.unicode_at(0) > 32:
 			check(font.has_char(ch.unicode_at(0)), "フォントにない文字: %s（credits.txt）" % ch)
+
+
+## 部屋の中の、まわりが床のマスを返す（敵の動きのテスト用）
+func open_spot(map: Dungeon) -> Vector2i:
+	var room: Rect2i = map.rooms[0]
+	return room.position + Vector2i(2, 2)
+
+
+func test_new_enemies() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	var map := Dungeon.generate_boss_room()
+	var center := map.start + Vector2i(0, -6)
+	# おばけキノコは動かない。となりなら攻撃する
+	var mush := EnemyData.create("mushroom")
+	mush.pos = center
+	for i in 20:
+		check(MonsterAI.decide(map, mush, center + Vector2i(4, 0), true, {}, rng)["type"] == "wait", "おばけキノコが動いた")
+	check(MonsterAI.decide(map, mush, center + Vector2i(1, 1), true, {}, rng)["type"] == "attack", "おばけキノコがとなりを攻撃しない")
+	# 弓兵はまっすぐ並んだ相手にだけ矢を撃つ
+	var archer := EnemyData.create("archer")
+	archer.pos = center
+	var arrows := 0
+	for i in 200:
+		var t: String = MonsterAI.decide(map, archer, center + Vector2i(4, 4), true, {}, rng)["type"]
+		check(t == "arrow" or t == "move", "弓兵の行動がおかしい: " + t)
+		if t == "arrow":
+			arrows += 1
+	check(arrows > 60 and arrows < 140, "弓兵の矢の回数が確率と合わない: %d" % arrows)
+	for i in 50:
+		check(MonsterAI.decide(map, archer, center + Vector2i(4, 2), true, {}, rng)["type"] != "arrow", "並んでいない相手に矢を撃った")
+		check(MonsterAI.decide(map, archer, center + Vector2i(0, 6), true, {}, rng)["type"] != "arrow", "遠すぎる相手に矢を撃った")
+	check(not MonsterAI.clear_shot(map, center, center + Vector2i(3, 0), {center + Vector2i(1, 0): true}), "敵ごしに矢が通る")
+	check(not MonsterAI.clear_shot(map, map.start, map.start + Vector2i(0, 3), {}), "壁ごしに矢が通る")
+	# 魔法使いは離れていると魔法を撃つことがある
+	var mage := EnemyData.create("mage")
+	mage.pos = center
+	var bolts := 0
+	for i in 200:
+		if MonsterAI.decide(map, mage, center + Vector2i(5, 1), true, {}, rng)["type"] == "bolt":
+			bolts += 1
+	check(bolts > 30 and bolts < 100, "魔法使いの魔法の回数が確率と合わない: %d" % bolts)
+	# 新しい敵の絵と表
+	for id in ["mushroom", "snake", "big_slime", "archer", "fire_spirit", "golem"]:
+		check(EnemyData.ENEMIES.has(id), "敵がいない: " + id)
+	for f in range(1, 10):
+		check(EnemyData.kinds_for_floor(f).size() >= 3, "%d階の敵が少ない" % f)
+	# 中断セーブで眠りや分身の状態が残る
+	var clone := EnemyData.create("big_slime")
+	clone.behavior = "chase"
+	clone.xp = 1
+	clone.sleep_turns = 3
+	var back := Actor.from_dict(clone.to_dict())
+	check(back.behavior == "chase" and back.xp == 1 and back.sleep_turns == 3, "分身や眠りの状態がセーブに残らない")
+	var old := clone.to_dict()
+	old.erase("behavior")
+	old.erase("sleep_turns")
+	old.erase("rested")
+	check(Actor.from_dict(old).behavior == "split", "古いセーブの敵が読めない")
+
+
+func test_item_floors() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	for i in 3000:
+		var item := ItemData.roll(1, rng)
+		check(item.data()["min_floor"] <= 1, "1階に深い階のアイテムが出た: " + item.id)
+	for id in ItemData.ITEMS:
+		check(ItemData.ITEMS[id].has("min_floor"), "出る階が決まっていない: " + id)
