@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bs2bmk1qklg0b"
-path="res://.godot/imported/wall.png-d66c1dd8e43b678c07f579d701b5b606.ctex"
+uid="uid://th1bpnk8iv0c"
+path="res://.godot/imported/skeleton_1.png-ee2125bfb0a72d3b2f04ea259a31c4d9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/placeholder/wall.png"
-dest_files=["res://.godot/imported/wall.png-d66c1dd8e43b678c07f579d701b5b606.ctex"]
+source_file="res://assets/art/enemies/skeleton_1.png"
+dest_files=["res://.godot/imported/skeleton_1.png-ee2125bfb0a72d3b2f04ea259a31c4d9.ctex"]
 
 [params]
 

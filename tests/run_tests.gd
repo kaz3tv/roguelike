@@ -10,6 +10,10 @@ func _init() -> void:
 	test_border_is_wall()
 	test_same_seed_same_map()
 	test_fov()
+	test_damage()
+	test_level_up()
+	test_enemy_table()
+	test_monster_ai()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -88,3 +92,62 @@ func test_fov() -> void:
 			check(Fov.compute(map, p).size() == 9, "通路で見える範囲が 9 マスでない")
 			return
 	check(false, "部屋に接していない通路が見つからない")
+
+
+func test_damage() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1
+	for i in 200:
+		var d := Combat.roll_damage(5, 2, rng)
+		check(d >= 4 and d <= 5, "攻撃5・防御2 のダメージが %d" % d)
+		check(Combat.roll_damage(1, 30, rng) == 1, "ダメージが最低 1 になっていない")
+
+
+func test_level_up() -> void:
+	var p := Actor.new_player()
+	check(Combat.gain_exp(p, 5) == 0, "経験値 5 でレベルが上がった")
+	check(Combat.gain_exp(p, 1) == 1 and p.level == 2, "経験値 6 で Lv2 にならない")
+	check(p.max_hp == 25 and p.attack == 6, "レベルアップで HP・攻撃力が上がっていない")
+	check(Combat.gain_exp(p, 100) >= 2, "大量の経験値で複数レベル上がらない")
+
+
+func test_enemy_table() -> void:
+	for f in range(1, 11):
+		check(not EnemyData.kinds_for_floor(f).is_empty(), "%d階に出る敵がいない" % f)
+	for id in EnemyData.ENEMIES:
+		for frame in 2:
+			var path := "res://assets/art/enemies/%s_%d.png" % [id, frame]
+			check(ResourceLoader.exists(path), "画像がない: " + path)
+	# 各階のタイル画像がそろっている
+	var map_view := load("res://scripts/map_view.gd")
+	for f in range(1, 11):
+		for file in map_view.TILE_FILES.values():
+			var path: String = map_view.theme_dir(f) + file
+			check(ResourceLoader.exists(path), "タイル画像がない: " + path)
+
+
+func test_monster_ai() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var map := make(11)
+	var room: Rect2i = map.rooms[0]
+	var e := EnemyData.create("slime")
+	e.pos = room.position
+	# 隣にいれば攻撃する
+	var action := MonsterAI.decide(map, e, room.position + Vector2i(1, 1), true, {}, rng)
+	check(action["type"] == "attack", "隣のプレイヤーを攻撃しない")
+	# 離れていれば近づく
+	var goal := room.end - Vector2i.ONE
+	var before := maxi(absi(goal.x - e.pos.x), absi(goal.y - e.pos.y))
+	action = MonsterAI.decide(map, e, goal, true, {}, rng)
+	if before > 1:
+		check(action["type"] == "move", "見えているプレイヤーに近づかない")
+		var after_pos: Vector2i = e.pos + action["dir"]
+		check(maxi(absi(goal.x - after_pos.x), absi(goal.y - after_pos.y)) < before, "近づく方向に動いていない")
+	# 壁の角越しには攻撃しない
+	for y in Dungeon.HEIGHT:
+		for x in Dungeon.WIDTH:
+			var p := Vector2i(x, y)
+			if map.is_walkable(p) and map.is_walkable(p + Vector2i(1, 1)) and not map.is_walkable(p + Vector2i(1, 0)):
+				check(not map.can_step(p, Vector2i(1, 1)), "壁の角を斜めに通れてしまう")
+				return

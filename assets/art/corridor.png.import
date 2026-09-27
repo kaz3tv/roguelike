@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bmak670j4ceq2"
-path="res://.godot/imported/stairs.png-1a4abf858760fd3c72ebfc448c745473.ctex"
+uid="uid://pl86hxrwwvgp"
+path="res://.godot/imported/corridor.png-cde0f6568463b32b9e75f37d135807c0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/placeholder/stairs.png"
-dest_files=["res://.godot/imported/stairs.png-1a4abf858760fd3c72ebfc448c745473.ctex"]
+source_file="res://assets/art/corridor.png"
+dest_files=["res://.godot/imported/corridor.png-cde0f6568463b32b9e75f37d135807c0.ctex"]
 
 [params]
 
