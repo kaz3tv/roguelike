@@ -38,6 +38,8 @@ const MOVE_KEYS := {
 const WAIT_KEYS := [KEY_SPACE, KEY_KP_5, KEY_PERIOD]
 ## 持ち物画面を開くキー
 const MENU_KEYS := [KEY_I, KEY_TAB]
+## 素材のクレジット（タイトル画面の C キーで表示）。素材を差し替えたらここも直す
+const CREDITS_PATH := "res://assets/credits.txt"
 ## ミニマップを出す／隠すキー
 const MINIMAP_KEY := KEY_N
 const PLAYER_FRAMES := [
@@ -93,6 +95,8 @@ var item_textures := {}
 @onready var title_records: Label = $HUD/Title/Records
 @onready var title_start: Label = $HUD/Title/Start
 @onready var suspend_panel: Control = $HUD/Suspend
+@onready var credits_panel: Control = $HUD/Title/Credits
+@onready var credits_label: Label = $HUD/Title/Credits/Label
 @onready var minimap = $HUD/Minimap
 @onready var fade: Control = $HUD/Fade
 @onready var fade_label: Label = $HUD/Fade/Label
@@ -158,6 +162,16 @@ func refresh_title_menu() -> void:
 
 
 func title_input(code: Key) -> void:
+	if credits_panel.visible:
+		if code in [KEY_ESCAPE, KEY_BACKSPACE, KEY_ENTER, KEY_KP_ENTER, KEY_C]:
+			audio.play("menu_cancel")
+			credits_panel.hide()
+		return
+	if code == KEY_C:
+		audio.play("menu_select")
+		credits_label.text = FileAccess.get_file_as_string(CREDITS_PATH)
+		credits_panel.show()
+		return
 	var has_save := SaveGame.exists()
 	if has_save and (code in [KEY_UP, KEY_W, KEY_KP_8, KEY_DOWN, KEY_S, KEY_KP_2]):
 		title_choice = 1 - title_choice

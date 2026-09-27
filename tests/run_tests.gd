@@ -325,3 +325,9 @@ func test_font_has_all_characters() -> void:
 					for ch in m.get_string(1):
 						if ch.unicode_at(0) > 32:
 							check(font.has_char(ch.unicode_at(0)), "フォントにない文字: %s（%s）" % [ch, file])
+	# クレジット画面の文章
+	var credits := FileAccess.get_file_as_string("res://assets/credits.txt")
+	check(credits.contains("Godot") and credits.contains("Komiku"), "クレジットの文章がない")
+	for ch in credits:
+		if ch.unicode_at(0) > 32:
+			check(font.has_char(ch.unicode_at(0)), "フォントにない文字: %s（credits.txt）" % ch)
