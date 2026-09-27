@@ -39,3 +39,27 @@ static func new_player() -> Actor:
 	a.defense = 2
 	a.inventory = Inventory.new()
 	return a
+
+
+## 中断セーブ用。敵は種類・位置・HP だけ、プレイヤーは成長と持ち物も残す。
+func to_dict() -> Dictionary:
+	var d := {"kind": kind, "pos": pos, "hp": hp, "max_hp": max_hp, "attack": attack, "defense": defense, "level": level, "xp": xp}
+	if inventory:
+		d["items"] = inventory.items.map(func(item: Item) -> Dictionary: return item.to_dict())
+		d["weapon"] = inventory.items.find(inventory.weapon)
+		d["shield"] = inventory.items.find(inventory.shield)
+	return d
+
+
+static func from_dict(d: Dictionary) -> Actor:
+	var a := new_player() if d["kind"] == "player" else EnemyData.create(d["kind"])
+	for key in ["pos", "hp", "max_hp", "attack", "defense", "level", "xp"]:
+		a.set(key, d[key])
+	if a.inventory:
+		for item_data in d["items"]:
+			a.inventory.add(Item.from_dict(item_data))
+		if d["weapon"] >= 0:
+			a.inventory.weapon = a.inventory.items[d["weapon"]]
+		if d["shield"] >= 0:
+			a.inventory.shield = a.inventory.items[d["shield"]]
+	return a

@@ -30,6 +30,17 @@ func display_name() -> String:
 	return data()["name"]
 
 
+func to_dict() -> Dictionary:
+	return {"id": id, "plus": plus, "pos": pos}
+
+
+static func from_dict(d: Dictionary) -> Item:
+	var item := Item.new(d["id"])
+	item.plus = d["plus"]
+	item.pos = d["pos"]
+	return item
+
+
 ## 装備したときに上がる攻撃力・防御力
 func bonus() -> int:
 	return data()["power"] + plus if is_equipment() else 0

@@ -19,6 +19,7 @@ func _init() -> void:
 	test_audio_files()
 	test_boss()
 	test_records()
+	test_save_game()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -258,3 +259,51 @@ func test_records() -> void:
 	check(again.runs == 4 and again.clears == 2, "遊んだ回数が保存されていない")
 	check(again.best_floor == 10 and again.best_kills == 9 and again.fastest_clear == 900, "最高記録が保存されていない")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+func test_save_game() -> void:
+	var path := "user://test_suspend.save"
+	SaveGame.delete(path)
+	check(not SaveGame.exists(path) and SaveGame.read(path).is_empty(), "セーブがないのに読めた")
+	var map := make(21)
+	var p := Actor.new_player()
+	p.pos = map.start
+	p.hp = 13
+	p.level = 4
+	var sword := Item.new("sword")
+	sword.plus = 2
+	p.inventory.add(Item.new("potion"))
+	p.inventory.add(sword)
+	p.inventory.toggle_equip(sword)
+	var slime := EnemyData.create("slime")
+	slime.pos = map.stairs
+	slime.hp = 2
+	var floor_item := Item.new("shield")
+	floor_item.pos = Vector2i(3, 4)
+	check(SaveGame.write({
+		"map": map.to_dict(),
+		"player": p.to_dict(),
+		"enemies": [slime.to_dict()],
+		"items": [floor_item.to_dict()],
+		"explored": [Vector2i(1, 2)],
+	}, path), "中断セーブを書けない")
+	check(SaveGame.exists(path), "中断セーブのファイルがない")
+	var data := SaveGame.read(path)
+	var map2 := Dungeon.from_dict(data["map"])
+	check(map2.tiles == map.tiles and map2.rooms == map.rooms and map2.stairs == map.stairs, "マップが元に戻らない")
+	var p2 := Actor.from_dict(data["player"])
+	check(p2.pos == p.pos and p2.hp == 13 and p2.level == 4, "プレイヤーの状態が元に戻らない")
+	check(p2.inventory.items.size() == 2 and p2.inventory.weapon == p2.inventory.items[1], "装備が元に戻らない")
+	check(p2.total_attack() == p.total_attack(), "装備込みの攻撃力が変わった")
+	var e2 := Actor.from_dict(data["enemies"][0])
+	check(e2.kind == "slime" and e2.hp == 2 and e2.pos == map.stairs and e2.display_name == "スライム", "敵が元に戻らない")
+	var item2 := Item.from_dict(data["items"][0])
+	check(item2.id == "shield" and item2.pos == Vector2i(3, 4), "落ちているアイテムが元に戻らない")
+	check(data["explored"] == [Vector2i(1, 2)], "見た場所が元に戻らない")
+	# 古い形のセーブは読まない
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_var({"version": SaveGame.VERSION - 1})
+	f.close()
+	check(SaveGame.read(path).is_empty(), "古い形のセーブを読んでしまった")
+	SaveGame.delete(path)
+	check(not SaveGame.exists(path), "中断セーブを消せない")
