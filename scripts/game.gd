@@ -11,6 +11,10 @@ const ENEMY_BASE_MAX := 5
 ## 1 フロアに落ちているアイテムの数
 const ITEM_MIN := 3
 const ITEM_MAX := 5
+## ボスがいる最後の階
+const BOSS_FLOOR := 10
+## 闇の炎の威力（ボスの攻撃力に対する割合）
+const BOLT_POWER := 0.6
 
 ## キー → 移動方向（8 方向）。斜めは Q/E/Z/C かテンキー。
 const MOVE_KEYS := {
@@ -100,17 +104,48 @@ func start_run() -> void:
 
 
 func enter_floor() -> void:
-	map = Dungeon.generate(rng)
+	var is_boss_floor := floor_number == BOSS_FLOOR
+	map = Dungeon.generate_boss_room() if is_boss_floor else Dungeon.generate(rng)
 	map_view.map = map
 	map_view.set_floor_theme(floor_number)
 	map_view.explored = {}
 	player.pos = map.start
-	spawn_enemies()
-	spawn_items()
+	if is_boss_floor:
+		clear_floor_objects()
+		spawn_enemy("boss", map.boss_pos)
+	else:
+		spawn_enemies()
+		spawn_items()
 	update_view()
 	camera.reset_smoothing()
 	add_message("地下%d階に着いた。" % floor_number)
-	audio.play_bgm(audio.bgm_for_floor(floor_number))
+	if is_boss_floor:
+		add_message("まがまがしい気配がする…魔王だ！")
+		audio.play_bgm("boss")
+	else:
+		audio.play_bgm(audio.bgm_for_floor(floor_number))
+
+
+## 前の階の敵とアイテムを片付ける
+func clear_floor_objects() -> void:
+	for e in enemies:
+		e.node.queue_free()
+	enemies.clear()
+	for item in floor_items:
+		item.node.queue_free()
+	floor_items.clear()
+
+
+func spawn_enemy(kind: String, pos: Vector2i) -> Actor:
+	var e := EnemyData.create(kind)
+	e.pos = pos
+	e.node = Sprite2D.new()
+	e.node.centered = false
+	e.node.texture = enemy_textures[e.kind][0]
+	e.node.position = Vector2(pos * TILE_SIZE)
+	enemy_layer.add_child(e.node)
+	enemies.append(e)
+	return e
 
 
 func spawn_enemies() -> void:
@@ -129,14 +164,7 @@ func spawn_enemies() -> void:
 		if taken.has(pos):
 			continue
 		taken[pos] = true
-		var e := EnemyData.create(kinds[rng.randi_range(0, kinds.size() - 1)])
-		e.pos = pos
-		e.node = Sprite2D.new()
-		e.node.centered = false
-		e.node.texture = enemy_textures[e.kind][0]
-		e.node.position = Vector2(pos * TILE_SIZE)
-		enemy_layer.add_child(e.node)
-		enemies.append(e)
+		spawn_enemy(kinds[rng.randi_range(0, kinds.size() - 1)], pos)
 
 
 func spawn_items() -> void:
@@ -199,6 +227,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif code in MENU_KEYS and not key.echo:
 		audio.play("menu_select")
 		inventory_menu.open(player.inventory)
+	elif code == KEY_F9 and not key.echo and OS.is_debug_build() and floor_number < BOSS_FLOOR:
+		# 確認用：エディタから起動したときだけ、F9 ですぐ次の階へ行ける
+		floor_number += 1
+		enter_floor()
 	elif code == KEY_M and not key.echo:
 		audio.toggle_mute()
 		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
@@ -244,10 +276,13 @@ func player_attack(enemy: Actor, dir: Vector2i) -> void:
 
 func kill_enemy(enemy: Actor) -> void:
 	kills += 1
-	add_message("%sを倒した。経験値 %d。" % [enemy.display_name, enemy.xp])
 	audio.play("enemy_die")
 	enemies.erase(enemy)
 	enemy.node.queue_free()
+	if enemy.kind == "boss":
+		show_clear()
+		return
+	add_message("%sを倒した。経験値 %d。" % [enemy.display_name, enemy.xp])
 	var levels := Combat.gain_exp(player, enemy.xp)
 	if levels > 0:
 		add_message("レベル%dに上がった！" % player.level)
@@ -370,6 +405,10 @@ func enemies_act() -> void:
 				enemy_attack(e)
 				if game_over:
 					return
+			"bolt":
+				enemy_bolt(e)
+				if game_over:
+					return
 			"move":
 				occupied.erase(e.pos)
 				e.pos += action["dir"]
@@ -391,6 +430,25 @@ func enemy_attack(e: Actor) -> void:
 	audio.play("hit_player")
 	if player.is_dead():
 		show_game_over(e)
+
+
+## ボスの遠距離攻撃。必ず当たるが、ふつうの攻撃より弱い。
+func enemy_bolt(e: Actor) -> void:
+	var damage := Combat.roll_damage(roundi(e.total_attack() * BOLT_POWER), player.total_defense(), rng)
+	player.hp = maxi(player.hp - damage, 0)
+	audio.play("magic_bolt")
+	add_message("%sは闇の炎を放った。%d のダメージを受けた。" % [e.display_name, damage])
+	popup(str(damage), player.pos, HURT_COLOR)
+	if player.is_dead():
+		show_game_over(e)
+
+
+func show_clear() -> void:
+	game_over = true
+	add_message("魔王を倒した！ダンジョンを踏破した！")
+	audio.play_bgm("clear")
+	game_over_label.text = "魔王を倒した！\nダンジョン踏破！\n\nレベル%d  %dターン\n倒した敵  %d体\n\nEnter でもう一度" % [player.level, turn, kills]
+	game_over_panel.show()
 
 
 func show_game_over(killer: Actor) -> void:
@@ -435,6 +493,9 @@ func update_view() -> void:
 	for item in floor_items:
 		item.node.visible = map_view.explored.has(item.pos)
 	status_label.text = "B%dF   Lv%d   HP %d/%d   攻%d 防%d" % [floor_number, player.level, player.hp, player.max_hp, player.total_attack(), player.total_defense()]
+	for e in enemies:
+		if e.kind == "boss":
+			status_label.text += "   %s %d/%d" % [e.display_name, e.hp, e.max_hp]
 
 
 func add_message(text: String) -> void:

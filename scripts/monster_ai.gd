@@ -8,7 +8,11 @@ const DIRS: Array[Vector2i] = [
 ]
 
 
-## 敵がとる行動を返す。{"type": "attack"} / {"type": "move", "dir": Vector2i} / {"type": "wait"}
+## ボスが離れた場所から闇の炎を放つ確率
+const BOSS_BOLT_CHANCE := 0.35
+
+
+## 敵がとる行動を返す。{"type": "attack"} / {"type": "bolt"} / {"type": "move", "dir": Vector2i} / {"type": "wait"}
 ## sees_player: 敵からプレイヤーが見えているか。occupied: 他の敵がいるマス。
 static func decide(map: Dungeon, enemy: Actor, player_pos: Vector2i, sees_player: bool, occupied: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var erratic := enemy.behavior == "erratic" and rng.randf() < 0.5
@@ -16,6 +20,8 @@ static func decide(map: Dungeon, enemy: Actor, player_pos: Vector2i, sees_player
 		var to_player := player_pos - enemy.pos
 		if maxi(absi(to_player.x), absi(to_player.y)) == 1 and map.can_step(enemy.pos, to_player):
 			return {"type": "attack"}
+		if enemy.behavior == "boss" and rng.randf() < BOSS_BOLT_CHANCE:
+			return {"type": "bolt"}
 		var dir := step_toward(map, enemy.pos, player_pos, occupied)
 		if dir != Vector2i.ZERO:
 			return {"type": "move", "dir": dir}

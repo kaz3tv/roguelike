@@ -16,6 +16,28 @@ var room_of := PackedInt32Array()
 var rooms: Array[Rect2i] = []
 var start := Vector2i.ZERO
 var stairs := Vector2i.ZERO
+## ボス部屋でボスが最初にいる場所
+var boss_pos := Vector2i(-1, -1)
+
+
+## 10 階のボス部屋：大きな部屋が 1 つだけ。下の端から入り、上の端にボスがいる。階段はない。
+static func generate_boss_room() -> Dungeon:
+	var d := Dungeon.new()
+	d.tiles.resize(WIDTH * HEIGHT)
+	d.tiles.fill(Tile.WALL)
+	d.room_of.resize(WIDTH * HEIGHT)
+	d.room_of.fill(-1)
+	var room := Rect2i(16, 9, 25, 18)
+	d.rooms.append(room)
+	for y in range(room.position.y, room.end.y):
+		for x in range(room.position.x, room.end.x):
+			d.tiles[d._index(Vector2i(x, y))] = Tile.FLOOR
+			d.room_of[d._index(Vector2i(x, y))] = 0
+	var center_x := room.position.x + room.size.x / 2
+	d.start = Vector2i(center_x, room.end.y - 2)
+	d.boss_pos = Vector2i(center_x, room.position.y + 2)
+	d.stairs = Vector2i(-1, -1)
+	return d
 
 
 static func generate(rng: RandomNumberGenerator) -> Dungeon:
