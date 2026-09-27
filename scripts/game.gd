@@ -15,6 +15,8 @@ const ITEM_MAX := 5
 const BOSS_FLOOR := 10
 ## 闇の炎の威力（ボスの攻撃力に対する割合）
 const BOLT_POWER := 0.6
+## リザルトを出してから Enter を受け付けるまでの時間（ミリ秒）
+const RESULT_INPUT_DELAY_MS := 800
 
 ## キー → 移動方向（8 方向）。斜めは Q/E/Z/C かテンキー。
 const MOVE_KEYS := {
@@ -49,6 +51,11 @@ var floor_items: Array[Item] = []
 var visible_cells := {}
 var player_frame := 0
 var game_over := false
+## タイトル画面を出しているあいだ true
+var in_title := false
+var records: Records
+## リザルトを出した時刻。直後の Enter の押しすぎでタイトルまで飛ばないようにする
+var result_shown_at := 0
 var log_lines: Array[String] = []
 var enemy_textures := {}
 var item_textures := {}
@@ -63,8 +70,12 @@ var item_textures := {}
 @onready var camera: Camera2D = $Player/Camera2D
 @onready var status_label: Label = $HUD/TopBar/StatusLabel
 @onready var log_label: Label = $HUD/LogPanel/LogLabel
-@onready var game_over_panel: Control = $HUD/GameOver
-@onready var game_over_label: Label = $HUD/GameOver/Label
+@onready var result_panel: Control = $HUD/Result
+@onready var result_header: Label = $HUD/Result/Header
+@onready var result_body: Label = $HUD/Result/Body
+@onready var title_panel: Control = $HUD/Title
+@onready var title_records: Label = $HUD/Title/Records
+@onready var title_start: Label = $HUD/Title/Start
 
 
 func _ready() -> void:
@@ -87,7 +98,29 @@ func _ready() -> void:
 	camera.limit_right = Dungeon.WIDTH * TILE_SIZE
 	camera.limit_bottom = Dungeon.HEIGHT * TILE_SIZE
 	$IdleTimer.timeout.connect(_on_idle_timer)
-	start_run()
+	records = Records.load_from()
+	show_title()
+
+
+func show_title() -> void:
+	in_title = true
+	game_over = false
+	result_panel.hide()
+	inventory_menu.hide()
+	title_panel.show()
+	title_records.text = records_text()
+	audio.play_bgm("title")
+
+
+## タイトルに出す、これまでの記録
+func records_text() -> String:
+	if records.runs == 0:
+		return "記録はまだありません"
+	var lines := ["挑戦 %d回   クリア %d回" % [records.runs, records.clears]]
+	lines.append("最高到達  地下%d階   最多撃破  %d体" % [records.best_floor, records.best_kills])
+	if records.fastest_clear > 0:
+		lines.append("最速クリア  %dターン" % records.fastest_clear)
+	return "\n".join(lines)
 
 
 func start_run() -> void:
@@ -97,7 +130,9 @@ func start_run() -> void:
 	turn = 0
 	kills = 0
 	game_over = false
-	game_over_panel.hide()
+	in_title = false
+	title_panel.hide()
+	result_panel.hide()
 	inventory_menu.hide()
 	log_lines.clear()
 	enter_floor()
@@ -206,9 +241,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var code := key.physical_keycode
 	var is_enter := code == KEY_ENTER or code == KEY_KP_ENTER
-	if game_over:
+	if in_title:
 		if is_enter and not key.echo:
+			audio.play("menu_select")
 			start_run()
+		get_viewport().set_input_as_handled()
+		return
+	if game_over:
+		if is_enter and not key.echo and Time.get_ticks_msec() - result_shown_at > RESULT_INPUT_DELAY_MS:
+			audio.play("menu_select")
+			show_title()
 		get_viewport().set_input_as_handled()
 		return
 	if inventory_menu.visible:
@@ -444,20 +486,41 @@ func enemy_bolt(e: Actor) -> void:
 
 
 func show_clear() -> void:
-	game_over = true
 	add_message("魔王を倒した！ダンジョンを踏破した！")
 	audio.play_bgm("clear")
-	game_over_label.text = "魔王を倒した！\nダンジョン踏破！\n\nレベル%d  %dターン\n倒した敵  %d体\n\nEnter でもう一度" % [player.level, turn, kills]
-	game_over_panel.show()
+	show_result("魔王を倒した！", "ダンジョン踏破", true)
 
 
 func show_game_over(killer: Actor) -> void:
-	game_over = true
 	add_message("%sにやられてしまった…" % killer.display_name)
 	audio.play("player_die")
 	audio.play_bgm("game_over")
-	game_over_label.text = "やられてしまった…\n\n地下%d階  レベル%d\n倒した敵  %d体\n\nEnter でもう一度" % [floor_number, player.level, kills]
-	game_over_panel.show()
+	show_result("やられてしまった…", "%sに倒された" % killer.display_name, false)
+
+
+## リザルト画面。記録を保存して、塗り替えた項目には「新記録」と付ける。
+func show_result(header: String, cause: String, cleared: bool) -> void:
+	game_over = true
+	inventory_menu.hide()
+	var new_records := records.add_run(floor_number, kills, turn, cleared)
+	var mark := func(key: String) -> String: return "  新記録！" if key in new_records else ""
+	result_header.text = header
+	var lines := [
+		cause,
+		"",
+		"到達    地下%d階%s" % [floor_number, mark.call("floor")],
+		"レベル  %d" % player.level,
+		"ターン  %d%s" % [turn, mark.call("turns")],
+		"倒した敵  %d体%s" % [kills, mark.call("kills")],
+		"",
+		"装備  %s / %s" % [
+			player.inventory.weapon.display_name() if player.inventory.weapon else "なし",
+			player.inventory.shield.display_name() if player.inventory.shield else "なし",
+		],
+	]
+	result_body.text = "\n".join(lines)
+	result_shown_at = Time.get_ticks_msec()
+	result_panel.show()
 
 
 func descend() -> void:

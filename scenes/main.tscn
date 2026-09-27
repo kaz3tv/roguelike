@@ -1,10 +1,12 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
 [ext_resource type="Script" path="res://scripts/map_view.gd" id="2_map"]
 [ext_resource type="Texture2D" path="res://assets/art/player_0.png" id="3_player"]
 [ext_resource type="Script" path="res://scripts/inventory_menu.gd" id="4_menu"]
 [ext_resource type="Script" path="res://scripts/audio.gd" id="5_audio"]
+[ext_resource type="Texture2D" path="res://assets/art/wall.png" id="6_wall"]
+[ext_resource type="Texture2D" path="res://assets/art/enemies/boss_0.png" id="7_boss"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_game")
@@ -90,15 +92,108 @@ theme_override_colors/font_color = Color(0.58, 0.69, 0.76, 1)
 theme_override_constants/line_spacing = -3
 theme_override_font_sizes/font_size = 8
 
-[node name="GameOver" type="ColorRect" parent="HUD"]
+[node name="Result" type="ColorRect" parent="HUD"]
 visible = false
 offset_right = 320.0
 offset_bottom = 180.0
-color = Color(0, 0, 0, 0.75)
+color = Color(0, 0, 0, 0.92)
 
-[node name="Label" type="Label" parent="HUD/GameOver"]
+[node name="Header" type="Label" parent="HUD/Result"]
+offset_top = 22.0
+offset_right = 320.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(1, 0.8, 0.46, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+
+[node name="Body" type="Label" parent="HUD/Result"]
+offset_left = 90.0
+offset_top = 52.0
+offset_right = 230.0
+offset_bottom = 150.0
+theme_override_constants/line_spacing = -2
+theme_override_font_sizes/font_size = 8
+
+[node name="Hint" type="Label" parent="HUD/Result"]
+offset_top = 158.0
+offset_right = 320.0
+offset_bottom = 172.0
+theme_override_colors/font_color = Color(0.58, 0.69, 0.76, 1)
+theme_override_font_sizes/font_size = 8
+text = "Enter でタイトルへ"
+horizontal_alignment = 1
+
+[node name="Title" type="ColorRect" parent="HUD"]
 offset_right = 320.0
 offset_bottom = 180.0
+color = Color(0.1, 0.11, 0.17, 1)
+
+[node name="Wall" type="TextureRect" parent="HUD/Title"]
+modulate = Color(0.35, 0.35, 0.45, 1)
+offset_right = 320.0
+offset_bottom = 180.0
+texture = ExtResource("6_wall")
+stretch_mode = 1
+
+[node name="Shade" type="ColorRect" parent="HUD/Title"]
+offset_left = 40.0
+offset_top = 14.0
+offset_right = 280.0
+offset_bottom = 166.0
+color = Color(0, 0, 0, 0.7)
+
+[node name="Name" type="Label" parent="HUD/Title"]
+offset_top = 20.0
+offset_right = 320.0
+offset_bottom = 42.0
+theme_override_colors/font_color = Color(1, 0.8, 0.46, 1)
+theme_override_colors/font_outline_color = Color(0.36, 0.15, 0.36, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "魔王の迷宮"
+horizontal_alignment = 1
+
+[node name="Sub" type="Label" parent="HUD/Title"]
+offset_top = 42.0
+offset_right = 320.0
+offset_bottom = 54.0
+theme_override_colors/font_color = Color(0.58, 0.69, 0.76, 1)
+theme_override_font_sizes/font_size = 8
+text = "地下10階に潜む魔王を倒せ"
+horizontal_alignment = 1
+
+[node name="Hero" type="TextureRect" parent="HUD/Title"]
+offset_left = 112.0
+offset_top = 62.0
+offset_right = 144.0
+offset_bottom = 94.0
+texture = ExtResource("3_player")
+expand_mode = 1
+
+[node name="Boss" type="TextureRect" parent="HUD/Title"]
+offset_left = 176.0
+offset_top = 62.0
+offset_right = 208.0
+offset_bottom = 94.0
+texture = ExtResource("7_boss")
+expand_mode = 1
+flip_h = true
+
+[node name="Start" type="Label" parent="HUD/Title"]
+offset_top = 104.0
+offset_right = 320.0
+offset_bottom = 116.0
+theme_override_font_sizes/font_size = 8
+text = "Enter ではじめる"
+horizontal_alignment = 1
+
+[node name="Records" type="Label" parent="HUD/Title"]
+offset_top = 124.0
+offset_right = 320.0
+offset_bottom = 162.0
+theme_override_colors/font_color = Color(0.58, 0.69, 0.76, 1)
+theme_override_constants/line_spacing = -2
 theme_override_font_sizes/font_size = 8
 horizontal_alignment = 1
-vertical_alignment = 1

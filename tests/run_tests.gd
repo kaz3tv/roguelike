@@ -18,6 +18,7 @@ func _init() -> void:
 	test_inventory()
 	test_audio_files()
 	test_boss()
+	test_records()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -205,7 +206,7 @@ func test_audio_files() -> void:
 	for sfx_name in audio.SFX_NAMES:
 		var path: String = audio.SFX_DIR + sfx_name + ".wav"
 		check(ResourceLoader.exists(path), "効果音がない: " + path)
-	var bgms := ["game_over"]
+	var bgms := ["game_over", "title", "clear"]
 	for f in range(1, 11):
 		bgms.append(audio.bgm_for_floor(f))
 	for bgm in bgms:
@@ -242,3 +243,18 @@ func test_boss() -> void:
 	var audio := load("res://scripts/audio.gd")
 	for bgm in ["boss", "clear"]:
 		check(ResourceLoader.exists(audio.BGM_DIR + bgm + ".ogg"), "BGM がない: " + bgm)
+
+
+func test_records() -> void:
+	var path := "user://test_records.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var r := Records.load_from(path)
+	check(r.runs == 0 and r.best_floor == 0, "記録ファイルがないのに記録がある")
+	check(r.add_run(3, 5, 200, false) == ["floor", "kills"], "初回の新記録の判定が違う")
+	check(r.add_run(2, 9, 150, false) == ["kills"], "撃破数だけの新記録の判定が違う")
+	check(r.add_run(10, 4, 900, true) == ["floor", "turns"], "初クリアの新記録の判定が違う")
+	check(r.add_run(10, 4, 950, true).is_empty(), "遅いクリアが新記録になった")
+	var again := Records.load_from(path)
+	check(again.runs == 4 and again.clears == 2, "遊んだ回数が保存されていない")
+	check(again.best_floor == 10 and again.best_kills == 9 and again.fastest_clear == 900, "最高記録が保存されていない")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
