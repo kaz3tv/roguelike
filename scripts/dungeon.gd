@@ -46,6 +46,21 @@ static func generate(rng: RandomNumberGenerator) -> Dungeon:
 	return d
 
 
+func to_dict() -> Dictionary:
+	return {"tiles": tiles, "room_of": room_of, "rooms": rooms, "start": start, "stairs": stairs, "boss_pos": boss_pos}
+
+
+static func from_dict(d: Dictionary) -> Dungeon:
+	var map := Dungeon.new()
+	map.tiles = d["tiles"]
+	map.room_of = d["room_of"]
+	map.rooms.assign(d["rooms"])
+	map.start = d["start"]
+	map.stairs = d["stairs"]
+	map.boss_pos = d["boss_pos"]
+	return map
+
+
 func tile_at(p: Vector2i) -> Tile:
 	if not in_bounds(p):
 		return Tile.WALL

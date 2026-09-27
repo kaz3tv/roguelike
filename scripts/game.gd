@@ -53,6 +53,8 @@ var player_frame := 0
 var game_over := false
 ## タイトル画面を出しているあいだ true
 var in_title := false
+## タイトルで選んでいる項目（中断セーブがあるときだけ使う）。0: つづきから 1: はじめから
+var title_choice := 0
 var records: Records
 ## リザルトを出した時刻。直後の Enter の押しすぎでタイトルまで飛ばないようにする
 var result_shown_at := 0
@@ -76,6 +78,7 @@ var item_textures := {}
 @onready var title_panel: Control = $HUD/Title
 @onready var title_records: Label = $HUD/Title/Records
 @onready var title_start: Label = $HUD/Title/Start
+@onready var suspend_panel: Control = $HUD/Suspend
 
 
 func _ready() -> void:
@@ -107,7 +110,10 @@ func show_title() -> void:
 	game_over = false
 	result_panel.hide()
 	inventory_menu.hide()
+	suspend_panel.hide()
 	title_panel.show()
+	title_choice = 0
+	refresh_title_menu()
 	title_records.text = records_text()
 	audio.play_bgm("title")
 
@@ -123,7 +129,40 @@ func records_text() -> String:
 	return "\n".join(lines)
 
 
+func refresh_title_menu() -> void:
+	if not SaveGame.exists():
+		title_start.text = "Enter ではじめる"
+		return
+	var names := ["つづきから", "はじめから"]
+	var lines := []
+	for i in names.size():
+		lines.append(("▶ " if i == title_choice else "   ") + names[i])
+	title_start.text = "\n".join(lines)
+
+
+func title_input(code: Key) -> void:
+	var has_save := SaveGame.exists()
+	if has_save and (code in [KEY_UP, KEY_W, KEY_KP_8, KEY_DOWN, KEY_S, KEY_KP_2]):
+		title_choice = 1 - title_choice
+		audio.play("menu_move")
+		refresh_title_menu()
+	elif code == KEY_ENTER or code == KEY_KP_ENTER:
+		audio.play("menu_select")
+		if has_save and title_choice == 0:
+			continue_run()
+		else:
+			# はじめからを選ぶと、中断セーブは消える
+			SaveGame.delete()
+			start_run()
+
+
 func start_run() -> void:
+	start_run_state()
+	enter_floor()
+
+
+## 新しく始めるときも続きから始めるときも共通の、画面と状態の片付け
+func start_run_state() -> void:
 	player = Actor.new_player()
 	player.node = player_sprite
 	floor_number = 1
@@ -132,10 +171,10 @@ func start_run() -> void:
 	game_over = false
 	in_title = false
 	title_panel.hide()
+	suspend_panel.hide()
 	result_panel.hide()
 	inventory_menu.hide()
 	log_lines.clear()
-	enter_floor()
 
 
 func enter_floor() -> void:
@@ -159,6 +198,8 @@ func enter_floor() -> void:
 		audio.play_bgm("boss")
 	else:
 		audio.play_bgm(audio.bgm_for_floor(floor_number))
+	# 階に着くたびに自動で中断セーブしておく（ブラウザのタブを閉じられたときの備え）
+	save_run()
 
 
 ## 前の階の敵とアイテムを片付ける
@@ -242,15 +283,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	var code := key.physical_keycode
 	var is_enter := code == KEY_ENTER or code == KEY_KP_ENTER
 	if in_title:
-		if is_enter and not key.echo:
-			audio.play("menu_select")
-			start_run()
+		if not key.echo:
+			title_input(code)
 		get_viewport().set_input_as_handled()
 		return
 	if game_over:
 		if is_enter and not key.echo and Time.get_ticks_msec() - result_shown_at > RESULT_INPUT_DELAY_MS:
 			audio.play("menu_select")
 			show_title()
+		get_viewport().set_input_as_handled()
+		return
+	if suspend_panel.visible:
+		if is_enter and not key.echo:
+			suspend_run()
+		elif code in [KEY_ESCAPE, KEY_BACKSPACE] and not key.echo:
+			audio.play("menu_cancel")
+			suspend_panel.hide()
 		get_viewport().set_input_as_handled()
 		return
 	if inventory_menu.visible:
@@ -273,6 +321,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		# 確認用：エディタから起動したときだけ、F9 ですぐ次の階へ行ける
 		floor_number += 1
 		enter_floor()
+	elif code == KEY_ESCAPE and not key.echo:
+		audio.play("menu_select")
+		suspend_panel.show()
 	elif code == KEY_M and not key.echo:
 		audio.toggle_mute()
 		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
@@ -502,6 +553,8 @@ func show_game_over(killer: Actor) -> void:
 func show_result(header: String, cause: String, cleared: bool) -> void:
 	game_over = true
 	inventory_menu.hide()
+	suspend_panel.hide()
+	SaveGame.delete()
 	var new_records := records.add_run(floor_number, kills, turn, cleared)
 	var mark := func(key: String) -> String: return "  新記録！" if key in new_records else ""
 	result_header.text = header
@@ -599,3 +652,77 @@ func _on_idle_timer() -> void:
 	for e in enemies:
 		var frames: Array = enemy_textures[e.kind]
 		e.node.texture = frames[1] if e.node.texture == frames[0] else frames[0]
+
+
+## ゲームを閉じるときは、遊んでいる途中なら中断セーブする
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_playing():
+		save_run()
+
+
+func is_playing() -> bool:
+	return not in_title and not game_over and player != null
+
+
+## 中断してタイトルに戻る
+func suspend_run() -> void:
+	save_run()
+	audio.play("menu_select")
+	show_title()
+
+
+func save_run() -> void:
+	SaveGame.write(to_save_data())
+
+
+func to_save_data() -> Dictionary:
+	return {
+		"floor": floor_number,
+		"turn": turn,
+		"kills": kills,
+		"rng_seed": rng.seed,
+		"rng_state": rng.state,
+		"map": map.to_dict(),
+		"explored": map_view.explored.keys(),
+		"player": player.to_dict(),
+		"enemies": enemies.map(func(e: Actor) -> Dictionary: return e.to_dict()),
+		"items": floor_items.map(func(item: Item) -> Dictionary: return item.to_dict()),
+		"log": log_lines.duplicate(),
+	}
+
+
+## 中断セーブから続きを始める。読めたらセーブは消す（やり直し防止）。
+func continue_run() -> void:
+	var data := SaveGame.read()
+	SaveGame.delete()
+	if data.is_empty():
+		start_run()
+		add_message("中断データを読めなかったので、はじめから始めた。")
+		return
+	start_run_state()
+	floor_number = data["floor"]
+	turn = data["turn"]
+	kills = data["kills"]
+	rng.seed = data["rng_seed"]
+	rng.state = data["rng_state"]
+	map = Dungeon.from_dict(data["map"])
+	map_view.map = map
+	map_view.set_floor_theme(floor_number)
+	map_view.explored = {}
+	for cell in data["explored"]:
+		map_view.explored[cell] = true
+	var saved_player := Actor.from_dict(data["player"])
+	saved_player.node = player_sprite
+	player = saved_player
+	clear_floor_objects()
+	for d in data["enemies"]:
+		var e := spawn_enemy(d["kind"], d["pos"])
+		e.hp = d["hp"]
+	for d in data["items"]:
+		var item := Item.from_dict(d)
+		place_item(item, item.pos)
+	log_lines.assign(data["log"])
+	add_message("冒険の続きを始めた。")
+	update_view()
+	camera.reset_smoothing()
+	audio.play_bgm("boss" if floor_number == BOSS_FLOOR else audio.bgm_for_floor(floor_number))
