@@ -17,6 +17,7 @@ func _init() -> void:
 	test_items()
 	test_inventory()
 	test_audio_files()
+	test_boss()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -216,3 +217,28 @@ func test_audio_files() -> void:
 		check(m.get_string(1) in audio.SFX_NAMES, "一覧にない効果音を鳴らしている: " + m.get_string(1))
 	for effect in ["fire", "warp", "map"]:
 		check("scroll_" + effect in audio.SFX_NAMES, "巻物の効果音がない: " + effect)
+
+
+func test_boss() -> void:
+	var map := Dungeon.generate_boss_room()
+	check(map.is_walkable(map.start) and map.is_walkable(map.boss_pos), "ボス部屋のスタートかボスの位置が壁")
+	check(reachable(map, map.start).has(map.boss_pos), "ボスのところまで歩いて行けない")
+	check(Fov.compute(map, map.start).has(map.boss_pos), "部屋に入ってもボスが見えない")
+	for f in range(1, 11):
+		check(not ("boss" in EnemyData.kinds_for_floor(f)), "%d階にボスがふつうの敵として出る" % f)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	var boss := EnemyData.create("boss")
+	boss.pos = map.boss_pos
+	check(MonsterAI.decide(map, boss, boss.pos + Vector2i.DOWN, true, {}, rng)["type"] == "attack", "ボスが隣のプレイヤーを攻撃しない")
+	var bolts := 0
+	for i in 200:
+		var t: String = MonsterAI.decide(map, boss, map.start, true, {}, rng)["type"]
+		check(t == "bolt" or t == "move", "離れたボスの行動がおかしい: " + t)
+		if t == "bolt":
+			bolts += 1
+	check(bolts > 30 and bolts < 120, "闇の炎の回数が確率と合わない: %d" % bolts)
+	check(ResourceLoader.exists("res://assets/art/enemies/boss_0.png"), "ボスの画像がない")
+	var audio := load("res://scripts/audio.gd")
+	for bgm in ["boss", "clear"]:
+		check(ResourceLoader.exists(audio.BGM_DIR + bgm + ".ogg"), "BGM がない: " + bgm)
