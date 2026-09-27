@@ -116,8 +116,14 @@ func test_enemy_table() -> void:
 		check(not EnemyData.kinds_for_floor(f).is_empty(), "%d階に出る敵がいない" % f)
 	for id in EnemyData.ENEMIES:
 		for frame in 2:
-			var path := "res://assets/placeholder/enemy_%s_%d.png" % [id, frame]
+			var path := "res://assets/art/enemies/%s_%d.png" % [id, frame]
 			check(ResourceLoader.exists(path), "画像がない: " + path)
+	# 各階のタイル画像がそろっている
+	var map_view := load("res://scripts/map_view.gd")
+	for f in range(1, 11):
+		for file in map_view.TILE_FILES.values():
+			var path: String = map_view.theme_dir(f) + file
+			check(ResourceLoader.exists(path), "タイル画像がない: " + path)
 
 
 func test_monster_ai() -> void:

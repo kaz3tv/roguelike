@@ -3,17 +3,36 @@ extends Node2D
 
 const TILE_SIZE := 16
 const FOG_COLOR := Color(0, 0, 0, 0.55)
-
-var textures := {
-	Dungeon.Tile.WALL: preload("res://assets/placeholder/wall.png"),
-	Dungeon.Tile.FLOOR: preload("res://assets/placeholder/floor.png"),
-	Dungeon.Tile.CORRIDOR: preload("res://assets/placeholder/corridor.png"),
-	Dungeon.Tile.STAIRS: preload("res://assets/placeholder/stairs.png"),
+## 3 階ごとにタイルの見た目が変わる：石（1〜3階）、苔の洞窟（4〜6階）、魔界（7階〜）
+const THEMES := [
+	{"until": 3, "dir": "res://assets/art/"},
+	{"until": 6, "dir": "res://assets/art/tiles_cave/"},
+	{"until": 999, "dir": "res://assets/art/tiles_abyss/"},
+]
+const TILE_FILES := {
+	Dungeon.Tile.WALL: "wall.png",
+	Dungeon.Tile.FLOOR: "floor.png",
+	Dungeon.Tile.CORRIDOR: "corridor.png",
+	Dungeon.Tile.STAIRS: "stairs.png",
 }
 
+var textures := {}
 var map: Dungeon
 var explored := {}
 var visible_cells := {}
+
+
+static func theme_dir(floor_number: int) -> String:
+	for theme in THEMES:
+		if floor_number <= theme["until"]:
+			return theme["dir"]
+	return THEMES[-1]["dir"]
+
+
+func set_floor_theme(floor_number: int) -> void:
+	var dir := theme_dir(floor_number)
+	for tile in TILE_FILES:
+		textures[tile] = load(dir + TILE_FILES[tile])
 
 
 func _draw() -> void:

@@ -20,8 +20,8 @@ const MOVE_KEYS := {
 ## その場で 1 ターン待つキー
 const WAIT_KEYS := [KEY_SPACE, KEY_KP_5, KEY_PERIOD]
 const PLAYER_FRAMES := [
-	preload("res://assets/placeholder/player_0.png"),
-	preload("res://assets/placeholder/player_1.png"),
+	preload("res://assets/art/player_0.png"),
+	preload("res://assets/art/player_1.png"),
 ]
 const DAMAGE_COLOR := Color("#ffcd75")
 const HURT_COLOR := Color("#ef7d57")
@@ -61,8 +61,8 @@ func _ready() -> void:
 	print("seed: ", rng.seed)
 	for id in EnemyData.ENEMIES:
 		enemy_textures[id] = [
-			load("res://assets/placeholder/enemy_%s_0.png" % id),
-			load("res://assets/placeholder/enemy_%s_1.png" % id),
+			load("res://assets/art/enemies/%s_0.png" % id),
+			load("res://assets/art/enemies/%s_1.png" % id),
 		]
 	camera.limit_left = 0
 	camera.limit_top = 0
@@ -87,6 +87,7 @@ func start_run() -> void:
 func enter_floor() -> void:
 	map = Dungeon.generate(rng)
 	map_view.map = map
+	map_view.set_floor_theme(floor_number)
 	map_view.explored = {}
 	player.pos = map.start
 	spawn_enemies()

@@ -22,7 +22,7 @@
 
 - `scenes/` 画面（シーン）
 - `scripts/` ゲームの処理（GDScript）
-- `assets/placeholder/` 仮のドット絵。同じ名前の PNG に置き換えれば見た目が変わる
+- `assets/art/` ドット絵（16×16）。`tiles_cave/` と `tiles_abyss/` は4階・7階からのタイル。同じ名前の PNG に置き換えれば見た目が変わる
 - `fonts/` ドット風フォント DotGothic16（SIL Open Font License、`fonts/OFL.txt`）
 - `tests/` 自動テスト
 
