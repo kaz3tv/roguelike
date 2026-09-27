@@ -3,7 +3,15 @@
 ブラウザで遊べる、ドット絵のローグライクゲームです。Godot 4 で作っています。
 仕様は [docs/spec.md](docs/spec.md) にあります。
 
-## 遊び方（開発中）
+## ブラウザで遊ぶ
+
+https://kaz3tv.github.io/roguelike/ （PC のブラウザ・キーボードで遊べます）
+
+main ブランチに変更が入るたびに、GitHub Actions がテストを走らせてから Web 版を書き出し、GitHub Pages に自動で公開します（`.github/workflows/web.yml`）。
+素材のクレジットはタイトル画面の C キーで表示されます（中身は `assets/credits.txt`。素材を差し替えたらここも直してください）。
+最初の1回だけ、リポジトリの Settings → Pages → Build and deployment の Source を「GitHub Actions」にしておく必要があります。
+
+## Godot で遊ぶ・開発する
 
 1. [Godot 4.7](https://godotengine.org/download/) をダウンロードする（インストール不要、解凍して起動するだけ）
 2. Godot を起動し、「インポート」でこのフォルダの `project.godot` を選ぶ

@@ -228,6 +228,32 @@ theme_override_constants/line_spacing = -2
 theme_override_font_sizes/font_size = 8
 horizontal_alignment = 1
 
+[node name="CreditsHint" type="Label" parent="HUD/Title"]
+offset_left = 200.0
+offset_top = 168.0
+offset_right = 316.0
+offset_bottom = 179.0
+theme_override_colors/font_color = Color(0.58, 0.69, 0.76, 1)
+theme_override_font_sizes/font_size = 8
+text = "C：クレジット"
+horizontal_alignment = 2
+
+[node name="Credits" type="ColorRect" parent="HUD/Title"]
+visible = false
+offset_left = 20.0
+offset_top = 10.0
+offset_right = 300.0
+offset_bottom = 170.0
+color = Color(0.1, 0.11, 0.17, 0.97)
+
+[node name="Label" type="Label" parent="HUD/Title/Credits"]
+offset_left = 8.0
+offset_top = 6.0
+offset_right = 272.0
+offset_bottom = 154.0
+theme_override_constants/line_spacing = -2
+theme_override_font_sizes/font_size = 8
+
 [node name="Fade" type="ColorRect" parent="HUD"]
 visible = false
 offset_right = 320.0

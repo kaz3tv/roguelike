@@ -2,3 +2,4 @@
 .godot/
 # 書き出したゲーム
 export/
+build/

@@ -1,0 +1,13 @@
+クレジット
+
+ゲームエンジン  Godot Engine（MIT ライセンス）
+  © Godot Engine contributors, Juan Linietsky, Ariel Manzur
+  ライセンス全文 godotengine.org/license
+フォント  DotGothic16（SIL Open Font License 1.1）
+  © The DotGothic16 Project Authors
+BGM  Komiku（CC0 1.0）
+効果音  Juhani Junkala / SubspaceAudio（CC0 1.0）
+ドット絵  DawnLike（CC-BY 4.0）
+  DragonDePlatino / DawnBringer
+
+Esc で戻る

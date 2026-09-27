@@ -20,6 +20,7 @@ func _init() -> void:
 	test_boss()
 	test_records()
 	test_save_game()
+	test_font_has_all_characters()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -307,3 +308,26 @@ func test_save_game() -> void:
 	check(SaveGame.read(path).is_empty(), "古い形のセーブを読んでしまった")
 	SaveGame.delete(path)
 	check(not SaveGame.exists(path), "中断セーブを消せない")
+
+
+func test_font_has_all_characters() -> void:
+	# ブラウザ版には代わりのフォントがないので、画面に出す文字はすべてドット絵フォントに入っている必要がある
+	var font: FontFile = load("res://fonts/DotGothic16-Regular.ttf")
+	var re := RegEx.create_from_string("\"([^\"]*)\"")
+	for path in ["res://scripts/", "res://scenes/"]:
+		for file in DirAccess.get_files_at(path):
+			if not (file.ends_with(".gd") or file.ends_with(".tscn")):
+				continue
+			for line in FileAccess.get_file_as_string(path + file).split("\n"):
+				if line.strip_edges().begins_with("#"):
+					continue
+				for m in re.search_all(line.split("##")[0]):
+					for ch in m.get_string(1):
+						if ch.unicode_at(0) > 32:
+							check(font.has_char(ch.unicode_at(0)), "フォントにない文字: %s（%s）" % [ch, file])
+	# クレジット画面の文章
+	var credits := FileAccess.get_file_as_string("res://assets/credits.txt")
+	check(credits.contains("Godot") and credits.contains("Komiku"), "クレジットの文章がない")
+	for ch in credits:
+		if ch.unicode_at(0) > 32:
+			check(font.has_char(ch.unicode_at(0)), "フォントにない文字: %s（credits.txt）" % ch)
