@@ -153,7 +153,7 @@ func refresh_title_menu() -> void:
 	var names := ["つづきから", "はじめから"]
 	var lines := []
 	for i in names.size():
-		lines.append(("▶ " if i == title_choice else "   ") + names[i])
+		lines.append(("＞" if i == title_choice else "　") + names[i])
 	title_start.text = "\n".join(lines)
 
 

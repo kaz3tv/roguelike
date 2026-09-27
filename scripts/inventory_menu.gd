@@ -60,7 +60,7 @@ func refresh() -> void:
 		desc_label.text = "Esc: 閉じる"
 	for i in inventory.items.size():
 		var item := inventory.items[i]
-		var mark := "▶" if i == cursor else "  "
+		var mark := "＞" if i == cursor else "　"
 		var equipped := "[E]" if inventory.is_equipped(item) else ""
 		lines.append("%s %s%s" % [mark, item.display_name(), equipped])
 	if not inventory.items.is_empty():
