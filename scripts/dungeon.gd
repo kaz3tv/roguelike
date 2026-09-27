@@ -40,6 +40,15 @@ func is_walkable(p: Vector2i) -> bool:
 	return tile_at(p) != Tile.WALL
 
 
+## from から dir へ 1 歩進めるか。斜めは壁の角をすり抜けられない（攻撃も同じ）。
+func can_step(from: Vector2i, dir: Vector2i) -> bool:
+	if not is_walkable(from + dir):
+		return false
+	if dir.x != 0 and dir.y != 0:
+		return is_walkable(from + Vector2i(dir.x, 0)) and is_walkable(from + Vector2i(0, dir.y))
+	return true
+
+
 func in_bounds(p: Vector2i) -> bool:
 	return p.x >= 0 and p.y >= 0 and p.x < WIDTH and p.y < HEIGHT
 
