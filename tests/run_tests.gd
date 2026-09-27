@@ -16,6 +16,7 @@ func _init() -> void:
 	test_monster_ai()
 	test_items()
 	test_inventory()
+	test_audio_files()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -196,3 +197,22 @@ func test_inventory() -> void:
 	check(not inv.toggle_equip(sword2) and p.total_attack() == base_atk, "剣を外せない")
 	inv.remove(shield)
 	check(inv.shield == null and p.total_defense() == base_def, "置いた盾が装備されたまま")
+
+
+func test_audio_files() -> void:
+	var audio := load("res://scripts/audio.gd")
+	for sfx_name in audio.SFX_NAMES:
+		var path: String = audio.SFX_DIR + sfx_name + ".wav"
+		check(ResourceLoader.exists(path), "効果音がない: " + path)
+	var bgms := ["game_over"]
+	for f in range(1, 11):
+		bgms.append(audio.bgm_for_floor(f))
+	for bgm in bgms:
+		check(ResourceLoader.exists(audio.BGM_DIR + bgm + ".ogg"), "BGM がない: " + bgm)
+	# game.gd の中で鳴らしている効果音が、すべて一覧にあるか
+	var code := FileAccess.get_file_as_string("res://scripts/game.gd") + FileAccess.get_file_as_string("res://scripts/inventory_menu.gd")
+	var re := RegEx.create_from_string("audio\\.play\\(\"([a-z_]+)\"\\)")
+	for m in re.search_all(code):
+		check(m.get_string(1) in audio.SFX_NAMES, "一覧にない効果音を鳴らしている: " + m.get_string(1))
+	for effect in ["fire", "warp", "map"]:
+		check("scroll_" + effect in audio.SFX_NAMES, "巻物の効果音がない: " + effect)

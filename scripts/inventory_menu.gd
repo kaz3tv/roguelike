@@ -9,6 +9,7 @@ const DOWN_KEYS := [KEY_DOWN, KEY_S, KEY_KP_2]
 const CLOSE_KEYS := [KEY_ESCAPE, KEY_I, KEY_TAB, KEY_BACKSPACE]
 
 var inventory: Inventory
+var audio: Node  ## 効果音（game.gd が設定する）
 var cursor := 0
 
 @onready var list_label: Label = $List
@@ -23,6 +24,7 @@ func open(inv: Inventory) -> void:
 
 
 func close() -> void:
+	audio.play("menu_cancel")
 	hide()
 	closed.emit()
 
@@ -35,9 +37,11 @@ func handle_key(code: Key) -> void:
 		return
 	elif code in UP_KEYS:
 		cursor = (cursor - 1 + count) % count
+		audio.play("menu_move")
 		refresh()
 	elif code in DOWN_KEYS:
 		cursor = (cursor + 1) % count
+		audio.play("menu_move")
 		refresh()
 	elif code == KEY_ENTER or code == KEY_KP_ENTER:
 		var item := inventory.items[cursor]

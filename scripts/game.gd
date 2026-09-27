@@ -53,6 +53,7 @@ var item_textures := {}
 @onready var enemy_layer: Node2D = $Enemies
 @onready var item_layer: Node2D = $Items
 @onready var inventory_menu = $HUD/InventoryMenu
+@onready var audio = $Audio
 @onready var effects: Node2D = $Effects
 @onready var player_sprite: Sprite2D = $Player
 @onready var camera: Camera2D = $Player/Camera2D
@@ -76,6 +77,7 @@ func _ready() -> void:
 	for id in ItemData.ITEMS:
 		item_textures[id] = load(ItemData.icon_path(id))
 	inventory_menu.item_chosen.connect(_on_item_chosen)
+	inventory_menu.audio = audio
 	camera.limit_left = 0
 	camera.limit_top = 0
 	camera.limit_right = Dungeon.WIDTH * TILE_SIZE
@@ -108,6 +110,7 @@ func enter_floor() -> void:
 	update_view()
 	camera.reset_smoothing()
 	add_message("地下%d階に着いた。" % floor_number)
+	audio.play_bgm(audio.bgm_for_floor(floor_number))
 
 
 func spawn_enemies() -> void:
@@ -194,7 +197,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif is_enter and not key.echo:
 		descend()
 	elif code in MENU_KEYS and not key.echo:
+		audio.play("menu_select")
 		inventory_menu.open(player.inventory)
+	elif code == KEY_M and not key.echo:
+		audio.toggle_mute()
+		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
 	else:
 		return
 	get_viewport().set_input_as_handled()
@@ -224,9 +231,11 @@ func player_attack(enemy: Actor, dir: Vector2i) -> void:
 	var result := Combat.attack(player, enemy, rng)
 	if not result["hit"]:
 		add_message("%sへの攻撃は外れた。" % enemy.display_name)
+		audio.play("attack_miss")
 		popup("MISS", enemy.pos, Color.WHITE)
 		return
 	popup(str(result["damage"]), enemy.pos, DAMAGE_COLOR)
+	audio.play("hit_enemy")
 	if enemy.is_dead():
 		kill_enemy(enemy)
 	else:
@@ -236,11 +245,13 @@ func player_attack(enemy: Actor, dir: Vector2i) -> void:
 func kill_enemy(enemy: Actor) -> void:
 	kills += 1
 	add_message("%sを倒した。経験値 %d。" % [enemy.display_name, enemy.xp])
+	audio.play("enemy_die")
 	enemies.erase(enemy)
 	enemy.node.queue_free()
 	var levels := Combat.gain_exp(player, enemy.xp)
 	if levels > 0:
 		add_message("レベル%dに上がった！" % player.level)
+		audio.play("level_up")
 		popup("LEVEL UP", player.pos, Color("#a7f070"))
 
 
@@ -251,11 +262,13 @@ func pick_up() -> void:
 		return
 	if not player.inventory.add(item):
 		add_message("持ち物がいっぱいで、%sを拾えない。" % item.display_name())
+		audio.play("error")
 		return
 	floor_items.erase(item)
 	item.node.queue_free()
 	item.node = null
 	add_message("%sを拾った。" % item.display_name())
+	audio.play("item_pickup")
 
 
 func _on_item_chosen(item: Item, action: String) -> void:
@@ -268,6 +281,7 @@ func _on_item_chosen(item: Item, action: String) -> void:
 func drop_item(item: Item) -> void:
 	if item_at(player.pos) != null or map.tile_at(player.pos) == Dungeon.Tile.STAIRS:
 		add_message("ここには置けない。")
+		audio.play("error")
 		return
 	player.inventory.remove(item)
 	place_item(item, player.pos)
@@ -282,17 +296,21 @@ func use_item(item: Item) -> void:
 		"weapon", "shield":
 			if inv.toggle_equip(item):
 				add_message("%sを装備した。" % item.display_name())
+				audio.play("equip")
 			else:
 				add_message("%sを外した。" % item.display_name())
+				audio.play("equip")
 		"potion":
 			var healed := mini(item.data()["power"], player.max_hp - player.hp)
 			player.hp += healed
 			inv.remove(item)
 			add_message("%sを飲んだ。HPが %d 回復した。" % [item.display_name(), healed])
 			popup("+%d" % healed, player.pos, Color("#a7f070"))
+			audio.play("heal")
 		"scroll":
 			inv.remove(item)
 			add_message("%sを読んだ。" % item.display_name())
+			audio.play("scroll_" + item.data()["effect"])
 			read_scroll(item)
 	end_player_turn()
 
@@ -365,10 +383,12 @@ func enemy_attack(e: Actor) -> void:
 	var result := Combat.attack(e, player, rng)
 	if not result["hit"]:
 		add_message("%sの攻撃は外れた。" % e.display_name)
+		audio.play("enemy_attack")
 		popup("MISS", player.pos, Color.WHITE)
 		return
 	add_message("%sの攻撃。%d のダメージを受けた。" % [e.display_name, result["damage"]])
 	popup(str(result["damage"]), player.pos, HURT_COLOR)
+	audio.play("hit_player")
 	if player.is_dead():
 		show_game_over(e)
 
@@ -376,6 +396,8 @@ func enemy_attack(e: Actor) -> void:
 func show_game_over(killer: Actor) -> void:
 	game_over = true
 	add_message("%sにやられてしまった…" % killer.display_name)
+	audio.play("player_die")
+	audio.play_bgm("game_over")
 	game_over_label.text = "やられてしまった…\n\n地下%d階  レベル%d\n倒した敵  %d体\n\nEnter でもう一度" % [floor_number, player.level, kills]
 	game_over_panel.show()
 
@@ -383,8 +405,10 @@ func show_game_over(killer: Actor) -> void:
 func descend() -> void:
 	if map.tile_at(player.pos) != Dungeon.Tile.STAIRS:
 		add_message("ここに階段はない。")
+		audio.play("error")
 		return
 	floor_number += 1
+	audio.play("stairs_down")
 	enter_floor()
 
 
