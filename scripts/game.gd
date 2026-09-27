@@ -8,6 +8,9 @@ const REGEN_TURNS := 6
 ## 1 フロアの敵の数 = ENEMY_BASE_MIN〜ENEMY_BASE_MAX + 階数/3
 const ENEMY_BASE_MIN := 3
 const ENEMY_BASE_MAX := 5
+## 1 フロアに落ちているアイテムの数
+const ITEM_MIN := 3
+const ITEM_MAX := 5
 
 ## キー → 移動方向（8 方向）。斜めは Q/E/Z/C かテンキー。
 const MOVE_KEYS := {
@@ -19,6 +22,8 @@ const MOVE_KEYS := {
 }
 ## その場で 1 ターン待つキー
 const WAIT_KEYS := [KEY_SPACE, KEY_KP_5, KEY_PERIOD]
+## 持ち物画面を開くキー
+const MENU_KEYS := [KEY_I, KEY_TAB]
 const PLAYER_FRAMES := [
 	preload("res://assets/art/player_0.png"),
 	preload("res://assets/art/player_1.png"),
@@ -36,14 +41,19 @@ var kills := 0
 var map: Dungeon
 var player: Actor
 var enemies: Array[Actor] = []
+var floor_items: Array[Item] = []
 var visible_cells := {}
 var player_frame := 0
 var game_over := false
 var log_lines: Array[String] = []
 var enemy_textures := {}
+var item_textures := {}
 
 @onready var map_view: Node2D = $MapView
 @onready var enemy_layer: Node2D = $Enemies
+@onready var item_layer: Node2D = $Items
+@onready var inventory_menu = $HUD/InventoryMenu
+@onready var audio = $Audio
 @onready var effects: Node2D = $Effects
 @onready var player_sprite: Sprite2D = $Player
 @onready var camera: Camera2D = $Player/Camera2D
@@ -64,6 +74,10 @@ func _ready() -> void:
 			load("res://assets/art/enemies/%s_0.png" % id),
 			load("res://assets/art/enemies/%s_1.png" % id),
 		]
+	for id in ItemData.ITEMS:
+		item_textures[id] = load(ItemData.icon_path(id))
+	inventory_menu.item_chosen.connect(_on_item_chosen)
+	inventory_menu.audio = audio
 	camera.limit_left = 0
 	camera.limit_top = 0
 	camera.limit_right = Dungeon.WIDTH * TILE_SIZE
@@ -80,6 +94,7 @@ func start_run() -> void:
 	kills = 0
 	game_over = false
 	game_over_panel.hide()
+	inventory_menu.hide()
 	log_lines.clear()
 	enter_floor()
 
@@ -91,9 +106,11 @@ func enter_floor() -> void:
 	map_view.explored = {}
 	player.pos = map.start
 	spawn_enemies()
+	spawn_items()
 	update_view()
 	camera.reset_smoothing()
 	add_message("地下%d階に着いた。" % floor_number)
+	audio.play_bgm(audio.bgm_for_floor(floor_number))
 
 
 func spawn_enemies() -> void:
@@ -122,6 +139,39 @@ func spawn_enemies() -> void:
 		enemies.append(e)
 
 
+func spawn_items() -> void:
+	for item in floor_items:
+		item.node.queue_free()
+	floor_items.clear()
+	var taken := {map.start: true, map.stairs: true}
+	for e in enemies:
+		taken[e.pos] = true
+	for i in rng.randi_range(ITEM_MIN, ITEM_MAX):
+		var room := map.rooms[rng.randi_range(0, map.rooms.size() - 1)]
+		var pos := Vector2i(rng.randi_range(room.position.x, room.end.x - 1), rng.randi_range(room.position.y, room.end.y - 1))
+		if taken.has(pos):
+			continue
+		taken[pos] = true
+		place_item(ItemData.roll(floor_number, rng), pos)
+
+
+func place_item(item: Item, pos: Vector2i) -> void:
+	item.pos = pos
+	item.node = Sprite2D.new()
+	item.node.centered = false
+	item.node.texture = item_textures[item.id]
+	item.node.position = Vector2(pos * TILE_SIZE)
+	item_layer.add_child(item.node)
+	floor_items.append(item)
+
+
+func item_at(pos: Vector2i) -> Item:
+	for item in floor_items:
+		if item.pos == pos:
+			return item
+	return null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed:
@@ -133,6 +183,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			start_run()
 		get_viewport().set_input_as_handled()
 		return
+	if inventory_menu.visible:
+		# 決定キーの押しっぱなしで連続して使ってしまわないようにする
+		if not key.echo or code not in [KEY_ENTER, KEY_KP_ENTER, KEY_X]:
+			inventory_menu.handle_key(code)
+		get_viewport().set_input_as_handled()
+		return
 	if MOVE_KEYS.has(code):
 		# 押しっぱなしで歩き続けられるよう、キーリピートも受け付ける
 		player_step(MOVE_KEYS[code])
@@ -140,6 +196,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		end_player_turn()
 	elif is_enter and not key.echo:
 		descend()
+	elif code in MENU_KEYS and not key.echo:
+		audio.play("menu_select")
+		inventory_menu.open(player.inventory)
+	elif code == KEY_M and not key.echo:
+		audio.toggle_mute()
+		add_message("音を消した。M でもとに戻る。" if audio.muted else "音を出した。")
 	else:
 		return
 	get_viewport().set_input_as_handled()
@@ -160,6 +222,7 @@ func player_step(dir: Vector2i) -> void:
 		player_frame ^= 1
 		if map.tile_at(target) == Dungeon.Tile.STAIRS:
 			add_message("階段がある。Enter で降りる。")
+		pick_up()
 	end_player_turn()
 
 
@@ -168,20 +231,122 @@ func player_attack(enemy: Actor, dir: Vector2i) -> void:
 	var result := Combat.attack(player, enemy, rng)
 	if not result["hit"]:
 		add_message("%sへの攻撃は外れた。" % enemy.display_name)
+		audio.play("attack_miss")
 		popup("MISS", enemy.pos, Color.WHITE)
 		return
 	popup(str(result["damage"]), enemy.pos, DAMAGE_COLOR)
+	audio.play("hit_enemy")
 	if enemy.is_dead():
-		kills += 1
-		add_message("%sを倒した。経験値 %d。" % [enemy.display_name, enemy.xp])
-		enemies.erase(enemy)
-		enemy.node.queue_free()
-		var levels := Combat.gain_exp(player, enemy.xp)
-		if levels > 0:
-			add_message("レベル%dに上がった！" % player.level)
-			popup("LEVEL UP", player.pos, Color("#a7f070"))
+		kill_enemy(enemy)
 	else:
 		add_message("%sに %d のダメージ。" % [enemy.display_name, result["damage"]])
+
+
+func kill_enemy(enemy: Actor) -> void:
+	kills += 1
+	add_message("%sを倒した。経験値 %d。" % [enemy.display_name, enemy.xp])
+	audio.play("enemy_die")
+	enemies.erase(enemy)
+	enemy.node.queue_free()
+	var levels := Combat.gain_exp(player, enemy.xp)
+	if levels > 0:
+		add_message("レベル%dに上がった！" % player.level)
+		audio.play("level_up")
+		popup("LEVEL UP", player.pos, Color("#a7f070"))
+
+
+## 足元のアイテムを拾う
+func pick_up() -> void:
+	var item := item_at(player.pos)
+	if item == null:
+		return
+	if not player.inventory.add(item):
+		add_message("持ち物がいっぱいで、%sを拾えない。" % item.display_name())
+		audio.play("error")
+		return
+	floor_items.erase(item)
+	item.node.queue_free()
+	item.node = null
+	add_message("%sを拾った。" % item.display_name())
+	audio.play("item_pickup")
+
+
+func _on_item_chosen(item: Item, action: String) -> void:
+	if action == "drop":
+		drop_item(item)
+	else:
+		use_item(item)
+
+
+func drop_item(item: Item) -> void:
+	if item_at(player.pos) != null or map.tile_at(player.pos) == Dungeon.Tile.STAIRS:
+		add_message("ここには置けない。")
+		audio.play("error")
+		return
+	player.inventory.remove(item)
+	place_item(item, player.pos)
+	add_message("%sを足元に置いた。" % item.display_name())
+	end_player_turn()
+
+
+## アイテムを使う。装備品なら装備する／外す。どれも 1 ターンかかる。
+func use_item(item: Item) -> void:
+	var inv := player.inventory
+	match item.type():
+		"weapon", "shield":
+			if inv.toggle_equip(item):
+				add_message("%sを装備した。" % item.display_name())
+				audio.play("equip")
+			else:
+				add_message("%sを外した。" % item.display_name())
+				audio.play("equip")
+		"potion":
+			var healed := mini(item.data()["power"], player.max_hp - player.hp)
+			player.hp += healed
+			inv.remove(item)
+			add_message("%sを飲んだ。HPが %d 回復した。" % [item.display_name(), healed])
+			popup("+%d" % healed, player.pos, Color("#a7f070"))
+			audio.play("heal")
+		"scroll":
+			inv.remove(item)
+			add_message("%sを読んだ。" % item.display_name())
+			audio.play("scroll_" + item.data()["effect"])
+			read_scroll(item)
+	end_player_turn()
+
+
+func read_scroll(item: Item) -> void:
+	match item.data()["effect"]:
+		"fire":
+			var targets := enemies.filter(func(e: Actor) -> bool: return visible_cells.has(e.pos))
+			if targets.is_empty():
+				add_message("しかし、まわりに敵はいなかった。")
+			for e: Actor in targets:
+				var damage: int = item.data()["power"]
+				e.hp = maxi(e.hp - damage, 0)
+				popup(str(damage), e.pos, DAMAGE_COLOR)
+				if e.is_dead():
+					kill_enemy(e)
+		"warp":
+			var room := map.rooms[rng.randi_range(0, map.rooms.size() - 1)]
+			for i in 50:
+				var pos := Vector2i(rng.randi_range(room.position.x, room.end.x - 1), rng.randi_range(room.position.y, room.end.y - 1))
+				if enemy_at(pos) == null:
+					player.pos = pos
+					break
+			camera.reset_smoothing()
+			pick_up()
+		"map":
+			for y in Dungeon.HEIGHT:
+				for x in Dungeon.WIDTH:
+					var cell := Vector2i(x, y)
+					if not map.is_walkable(cell):
+						continue
+					for dy in range(-1, 2):
+						for dx in range(-1, 2):
+							if map.in_bounds(cell + Vector2i(dx, dy)):
+								map_view.explored[cell + Vector2i(dx, dy)] = true
+			add_message("フロアの地図が頭に浮かんだ。")
 
 
 func end_player_turn() -> void:
@@ -218,10 +383,12 @@ func enemy_attack(e: Actor) -> void:
 	var result := Combat.attack(e, player, rng)
 	if not result["hit"]:
 		add_message("%sの攻撃は外れた。" % e.display_name)
+		audio.play("enemy_attack")
 		popup("MISS", player.pos, Color.WHITE)
 		return
 	add_message("%sの攻撃。%d のダメージを受けた。" % [e.display_name, result["damage"]])
 	popup(str(result["damage"]), player.pos, HURT_COLOR)
+	audio.play("hit_player")
 	if player.is_dead():
 		show_game_over(e)
 
@@ -229,6 +396,8 @@ func enemy_attack(e: Actor) -> void:
 func show_game_over(killer: Actor) -> void:
 	game_over = true
 	add_message("%sにやられてしまった…" % killer.display_name)
+	audio.play("player_die")
+	audio.play_bgm("game_over")
 	game_over_label.text = "やられてしまった…\n\n地下%d階  レベル%d\n倒した敵  %d体\n\nEnter でもう一度" % [floor_number, player.level, kills]
 	game_over_panel.show()
 
@@ -236,8 +405,10 @@ func show_game_over(killer: Actor) -> void:
 func descend() -> void:
 	if map.tile_at(player.pos) != Dungeon.Tile.STAIRS:
 		add_message("ここに階段はない。")
+		audio.play("error")
 		return
 	floor_number += 1
+	audio.play("stairs_down")
 	enter_floor()
 
 
@@ -260,7 +431,10 @@ func update_view() -> void:
 	for e in enemies:
 		e.node.position = Vector2(e.pos * TILE_SIZE)
 		e.node.visible = visible_cells.has(e.pos)
-	status_label.text = "B%dF   Lv%d   HP %d/%d" % [floor_number, player.level, player.hp, player.max_hp]
+	# アイテムは一度見た場所なら、今見えていなくても表示しておく
+	for item in floor_items:
+		item.node.visible = map_view.explored.has(item.pos)
+	status_label.text = "B%dF   Lv%d   HP %d/%d   攻%d 防%d" % [floor_number, player.level, player.hp, player.max_hp, player.total_attack(), player.total_defense()]
 
 
 func add_message(text: String) -> void:

@@ -14,6 +14,9 @@ func _init() -> void:
 	test_level_up()
 	test_enemy_table()
 	test_monster_ai()
+	test_items()
+	test_inventory()
+	test_audio_files()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -151,3 +154,65 @@ func test_monster_ai() -> void:
 			if map.is_walkable(p) and map.is_walkable(p + Vector2i(1, 1)) and not map.is_walkable(p + Vector2i(1, 0)):
 				check(not map.can_step(p, Vector2i(1, 1)), "壁の角を斜めに通れてしまう")
 				return
+
+
+func test_items() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var seen := {}
+	for i in 2000:
+		var item := ItemData.roll(9, rng)
+		seen[item.id] = true
+		check(ItemData.ITEMS.has(item.id), "知らないアイテム: " + item.id)
+		if not item.is_equipment():
+			check(item.plus == 0, "装備品以外に強化値が付いた")
+	check(seen.size() == ItemData.ITEMS.size(), "出てこないアイテムがある")
+	for id in ItemData.ITEMS:
+		check(ResourceLoader.exists(ItemData.icon_path(id)), "アイテム画像がない: " + id)
+	var sword := Item.new("sword")
+	sword.plus = 2
+	check(sword.display_name() == "剣+2" and sword.bonus() == 5, "剣+2 の名前か強さが違う")
+
+
+func test_inventory() -> void:
+	var p := Actor.new_player()
+	var inv := p.inventory
+	for i in Inventory.CAPACITY:
+		check(inv.add(Item.new("potion")), "持ち物に入らない")
+	check(not inv.add(Item.new("potion")), "11 個目が入ってしまう")
+	inv.items.clear()
+	var sword := Item.new("sword")
+	var shield := Item.new("shield")
+	inv.add(sword)
+	inv.add(shield)
+	var base_atk := p.total_attack()
+	var base_def := p.total_defense()
+	check(inv.toggle_equip(sword) and p.total_attack() == base_atk + 3, "剣を装備しても攻撃力が上がらない")
+	check(inv.toggle_equip(shield) and p.total_defense() == base_def + 2, "盾を装備しても防御力が上がらない")
+	var sword2 := Item.new("sword")
+	sword2.plus = 1
+	inv.add(sword2)
+	inv.toggle_equip(sword2)
+	check(inv.weapon == sword2 and not inv.is_equipped(sword), "剣の持ち替えができない")
+	check(not inv.toggle_equip(sword2) and p.total_attack() == base_atk, "剣を外せない")
+	inv.remove(shield)
+	check(inv.shield == null and p.total_defense() == base_def, "置いた盾が装備されたまま")
+
+
+func test_audio_files() -> void:
+	var audio := load("res://scripts/audio.gd")
+	for sfx_name in audio.SFX_NAMES:
+		var path: String = audio.SFX_DIR + sfx_name + ".wav"
+		check(ResourceLoader.exists(path), "効果音がない: " + path)
+	var bgms := ["game_over"]
+	for f in range(1, 11):
+		bgms.append(audio.bgm_for_floor(f))
+	for bgm in bgms:
+		check(ResourceLoader.exists(audio.BGM_DIR + bgm + ".ogg"), "BGM がない: " + bgm)
+	# game.gd の中で鳴らしている効果音が、すべて一覧にあるか
+	var code := FileAccess.get_file_as_string("res://scripts/game.gd") + FileAccess.get_file_as_string("res://scripts/inventory_menu.gd")
+	var re := RegEx.create_from_string("audio\\.play\\(\"([a-z_]+)\"\\)")
+	for m in re.search_all(code):
+		check(m.get_string(1) in audio.SFX_NAMES, "一覧にない効果音を鳴らしている: " + m.get_string(1))
+	for effect in ["fire", "warp", "map"]:
+		check("scroll_" + effect in audio.SFX_NAMES, "巻物の効果音がない: " + effect)

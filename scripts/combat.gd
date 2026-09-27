@@ -12,7 +12,7 @@ const LEVEL_UP_ATTACK := 1
 static func attack(attacker: Actor, defender: Actor, rng: RandomNumberGenerator) -> Dictionary:
 	if rng.randf() >= HIT_CHANCE:
 		return {"hit": false, "damage": 0}
-	var damage := roll_damage(attacker.attack, defender.defense, rng)
+	var damage := roll_damage(attacker.total_attack(), defender.total_defense(), rng)
 	defender.hp = maxi(defender.hp - damage, 0)
 	return {"hit": true, "damage": damage}
 

@@ -13,10 +13,20 @@ var level := 1
 var xp := 0  ## プレイヤーは累計経験値、敵は倒したときにもらえる経験値
 var behavior := ""  ## 敵の動き方（EnemyData 参照）
 var node: Sprite2D  ## 画面上の絵
+var inventory: Inventory  ## プレイヤーだけが持つ
 
 
 func is_dead() -> bool:
 	return hp <= 0
+
+
+## 装備込みの攻撃力・防御力
+func total_attack() -> int:
+	return attack + (inventory.attack_bonus() if inventory else 0)
+
+
+func total_defense() -> int:
+	return defense + (inventory.defense_bonus() if inventory else 0)
 
 
 static func new_player() -> Actor:
@@ -27,4 +37,5 @@ static func new_player() -> Actor:
 	a.hp = 20
 	a.attack = 5
 	a.defense = 2
+	a.inventory = Inventory.new()
 	return a
