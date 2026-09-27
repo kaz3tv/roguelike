@@ -23,6 +23,7 @@ func _init() -> void:
 	test_font_has_all_characters()
 	test_new_enemies()
 	test_item_floors()
+	test_pad_input()
 	if failures == 0:
 		print("すべてのテストに合格しました")
 	quit(1 if failures > 0 else 0)
@@ -405,3 +406,47 @@ func test_item_floors() -> void:
 		check(item.data()["min_floor"] <= 1, "1階に深い階のアイテムが出た: " + item.id)
 	for id in ItemData.ITEMS:
 		check(ItemData.ITEMS[id].has("min_floor"), "出る階が決まっていない: " + id)
+
+
+## ゲームパッドの方向入力を dt 刻みで seconds 秒進め、出た歩数を返す
+func run_pad(pad: PadInput, seconds: float, dt := 0.01) -> Array:
+	var steps := []
+	var t := 0.0
+	while t < seconds - 0.0001:
+		var r: Array = pad.update(dt)
+		if r[0] != Vector2i.ZERO:
+			steps.append(r)
+		t += dt
+	return steps
+
+
+func test_pad_input() -> void:
+	# スティックの傾きを 8 方向に丸める
+	check(PadInput.quantize(Vector2(0.9, 0.1)) == Vector2i(1, 0), "スティック右が右にならない")
+	check(PadInput.quantize(Vector2(0.7, -0.7)) == Vector2i(1, -1), "スティック右上が右上にならない")
+	check(PadInput.quantize(Vector2(-0.1, 0.95)) == Vector2i(0, 1), "スティック下が下にならない")
+	check(PadInput.quantize(Vector2(0.2, 0.2)) == Vector2i.ZERO, "スティックの遊びが効いていない")
+	# 押した直後に 1 歩、押しっぱなしで少し待ってから続けて歩く
+	var pad := PadInput.new()
+	pad.set_button(JOY_BUTTON_DPAD_RIGHT, true)
+	var steps := run_pad(pad, 0.1)
+	check(steps.size() == 1 and steps[0][0] == Vector2i(1, 0) and not steps[0][1], "十字キーを押して 1 歩出ない")
+	steps = run_pad(pad, 0.6)
+	check(steps.size() >= 3 and steps.size() <= 5 and steps.all(func(x): return x[1]), "押しっぱなしで歩き続けない: %d" % steps.size())
+	pad.set_button(JOY_BUTTON_DPAD_RIGHT, false)
+	check(run_pad(pad, 0.5).is_empty(), "離したのに歩き続ける")
+	# 2 つをほぼ同時に押すと斜めの 1 歩になる
+	pad.set_button(JOY_BUTTON_DPAD_UP, true)
+	pad.update(0.02)
+	pad.set_button(JOY_BUTTON_DPAD_LEFT, true)
+	steps = run_pad(pad, 0.1)
+	check(steps.size() == 1 and steps[0][0] == Vector2i(-1, -1), "同時押しで斜めにならない")
+	# 斜めから片方だけ離しても、すぐには余計な 1 歩が出ない
+	pad.set_button(JOY_BUTTON_DPAD_LEFT, false)
+	check(run_pad(pad, 0.1).is_empty(), "斜めから片方を離したら余計に歩いた")
+	pad.set_button(JOY_BUTTON_DPAD_UP, false)
+	run_pad(pad, 0.05)
+	# 十字キーのほうがスティックより優先
+	pad.set_axis(JOY_AXIS_LEFT_X, -1.0)
+	pad.set_button(JOY_BUTTON_DPAD_DOWN, true)
+	check(pad.direction() == Vector2i(0, 1), "十字キーよりスティックが優先された")
